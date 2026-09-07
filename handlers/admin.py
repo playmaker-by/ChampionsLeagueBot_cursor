@@ -677,6 +677,12 @@ async def edit_match_input_handler(message: Message, state: FSMContext):
     if await reject_if_not_admin_message(message):
         return
 
+    command = (message.text or "").strip().casefold()
+    if command in {"/cancel", "отмена", "выход", "назад"}:
+        await state.clear()
+        await message.answer("❌ Редактирование матча отменено.")
+        return
+
     try:
         parsed = parse_match_line(message.text or "")
     except ParseError as error:
