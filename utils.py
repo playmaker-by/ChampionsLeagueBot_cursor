@@ -10,35 +10,87 @@ KICKOFF_DISPLAY_FORMAT = "%d.%m %H:%M"
 
 
 TEAM_FLAGS = {
+    "arsenal": "🇬🇧",
     "арсенал": "🇬🇧",
+    "manchester city": "🇬🇧",
     "манчестер сити": "🇬🇧",
+    "manchester united": "🇬🇧",
     "манчестер юнайтед": "🇬🇧",
+    "liverpool": "🇬🇧",
     "ливерпуль": "🇬🇧",
+    "chelsea": "🇬🇧",
     "челси": "🇬🇧",
+    "tottenham": "🇬🇧",
     "тоттенхэм": "🇬🇧",
+    "real madrid": "🇪🇸",
     "реал мадрид": "🇪🇸",
+    "barcelona": "🇪🇸",
     "барселона": "🇪🇸",
+    "atletico de madrid": "🇪🇸",
     "атлетико": "🇪🇸",
+    "benfica": "🇵🇹",
     "бенфика": "🇵🇹",
+    "porto": "🇵🇹",
     "порту": "🇵🇹",
+    "sporting cp": "🇵🇹",
     "спортинг": "🇵🇹",
+    "bayern munich": "🇩🇪",
     "бавария": "🇩🇪",
+    "borussia dortmund": "🇩🇪",
     "боруссия дортмунд": "🇩🇪",
+    "bayer leverkusen": "🇩🇪",
     "байер": "🇩🇪",
+    "paris saint-germain": "🇫🇷",
     "псж": "🇫🇷",
+    "marseille": "🇫🇷",
     "марсель": "🇫🇷",
+    "inter milan": "🇮🇹",
     "интер": "🇮🇹",
+    "ac milan": "🇮🇹",
     "милан": "🇮🇹",
+    "juventus": "🇮🇹",
     "ювентус": "🇮🇹",
+    "napoli": "🇮🇹",
     "наполи": "🇮🇹",
+    "ajax": "🇳🇱",
     "аякс": "🇳🇱",
+    "psv": "🇳🇱",
     "псв": "🇳🇱",
+    "feyenoord": "🇳🇱",
     "фейеноорд": "🇳🇱",
     "аек афины": "🇬🇷",
     "олимпиакос": "🇬🇷",
     "ласк": "🇦🇹",
     "галатасарай": "🇹🇷",
     "шахтер": "🇺🇦",
+}
+
+
+TEAM_NAMES_RU = {
+    "arsenal": "Арсенал",
+    "manchester city": "Манчестер Сити",
+    "manchester united": "Манчестер Юнайтед",
+    "liverpool": "Ливерпуль",
+    "chelsea": "Челси",
+    "tottenham": "Тоттенхэм",
+    "real madrid": "Реал Мадрид",
+    "barcelona": "Барселона",
+    "atletico de madrid": "Атлетико Мадрид",
+    "benfica": "Бенфика",
+    "porto": "Порту",
+    "sporting cp": "Спортинг",
+    "bayern munich": "Бавария",
+    "borussia dortmund": "Боруссия Дортмунд",
+    "bayer leverkusen": "Байер",
+    "paris saint-germain": "ПСЖ",
+    "marseille": "Марсель",
+    "inter milan": "Интер",
+    "ac milan": "Милан",
+    "juventus": "Ювентус",
+    "napoli": "Наполи",
+    "ajax": "Аякс",
+    "psv": "ПСВ",
+    "feyenoord": "Фейеноорд",
 }
 
 
@@ -84,8 +136,10 @@ def format_kickoff_compact(kickoff_at: str) -> str:
 
 
 def format_team_name(team_name: str) -> str:
-    flag = TEAM_FLAGS.get(team_name.casefold())
-    return f"{flag} {team_name}" if flag else team_name
+    normalized = team_name.strip().casefold()
+    localized_name = TEAM_NAMES_RU.get(normalized, team_name)
+    flag = TEAM_FLAGS.get(normalized) or TEAM_FLAGS.get(localized_name.casefold())
+    return f"{flag} {localized_name}" if flag else localized_name
 
 
 def format_match_teams(home_team: str, away_team: str) -> str:

@@ -488,10 +488,12 @@ async def import_matches_from_api_callback(callback: CallbackQuery):
             await db.save_team_asset(
                 match["home_team"],
                 match.get("home_logo_url"),
+                match.get("home_country_code"),
             )
             await db.save_team_asset(
                 match["away_team"],
                 match.get("away_logo_url"),
+                match.get("away_country_code"),
             )
     except Exception:
         await callback.message.answer(

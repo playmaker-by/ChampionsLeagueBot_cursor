@@ -5,6 +5,24 @@ import httpx
 
 API_URL = "https://api.football-data.org/v4"
 
+COUNTRY_CODES = {
+    "England": "ENG",
+    "Spain": "ESP",
+    "Germany": "DEU",
+    "France": "FRA",
+    "Italy": "ITA",
+    "Netherlands": "NED",
+    "Portugal": "PRT",
+    "Türkiye": "TUR",
+    "Turkey": "TUR",
+    "Ukraine": "UKR",
+    "Greece": "GRC",
+    "Austria": "AUT",
+    "Belgium": "BEL",
+    "Scotland": "SCO",
+    "Switzerland": "CHE",
+}
+
 
 class FootballApiError(RuntimeError):
     pass
@@ -58,6 +76,10 @@ async def get_champions_league_matchday(
                 "away_team": away.get("shortName") or away["name"],
                 "home_logo_url": home.get("crest"),
                 "away_logo_url": away.get("crest"),
+                "home_country_code": (home.get("area") or {}).get("countryCode")
+                or COUNTRY_CODES.get((home.get("area") or {}).get("name")),
+                "away_country_code": (away.get("area") or {}).get("countryCode")
+                or COUNTRY_CODES.get((away.get("area") or {}).get("name")),
                 "kickoff_at": api_datetime_to_storage(kickoff),
             }
         )

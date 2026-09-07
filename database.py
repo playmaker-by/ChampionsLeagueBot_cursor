@@ -32,6 +32,12 @@ class Database:
         sql = SQL_PATH.read_text(encoding="utf-8")
         async with self.connect() as db:
             await db.executescript(sql)
+            cursor = await db.execute("PRAGMA table_info(team_assets)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            if "country_code" not in columns:
+                await db.execute(
+                    "ALTER TABLE team_assets ADD COLUMN country_code TEXT"
+                )
 
     async def get_user(self, telegram_id: int):
         async with self.connect() as db:
@@ -928,20 +934,34 @@ class Database:
             )
             return await cursor.fetchone()
 
-    async def save_team_asset(self, team_name: str, logo_url: str | None):
-        if not logo_url:
+    async def save_team_asset(
+        self,
+        team_name: str,
+        logo_url: str | None,
+        country_code: str | None = None,
+    ):
+        if not logo_url and not country_code:
             return
         async with self.connect() as db:
             await db.execute(
                 """
-                INSERT INTO team_assets (team_name, logo_url, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO team_assets (
+                    team_name,
+                    logo_url,
+                    country_code,
+                    updated_at
+                )
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(team_name)
                 DO UPDATE SET
-                    logo_url = excluded.logo_url,
+                    logo_url = COALESCE(excluded.logo_url, team_assets.logo_url),
+                    country_code = COALESCE(
+                        excluded.country_code,
+                        team_assets.country_code
+                    ),
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (team_name, logo_url),
+                (team_name, logo_url, country_code),
             )
 
     async def predicted_count_for_round(

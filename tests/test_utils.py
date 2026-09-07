@@ -56,6 +56,12 @@ class MatchDisplayTests(unittest.TestCase):
             "Неизвестный клуб — Другой клуб",
         )
 
+    def test_english_api_team_gets_russian_name_and_flag(self):
+        self.assertEqual(
+            format_match_teams("Arsenal", "Napoli"),
+            "🇬🇧 Арсенал — 🇮🇹 Наполи",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -228,6 +228,8 @@ CREATE TABLE IF NOT EXISTS team_assets (
 
     logo_url        TEXT,
 
+    country_code    TEXT,
+
     updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
