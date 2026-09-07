@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from database import Database
 from utils import utc_now_str
@@ -59,11 +60,22 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.db.match_locked_for_admin(match))
 
         standings = await self.db.get_round_standings(round_id)
-        self.assertEqual(standings[0]["points"], 3)
+        self.assertEqual(standings[0]["points"], 6)
         self.assertEqual(standings[0]["exact"], 1)
 
         table = await self.db.get_tournament_standings(tournament_id)
-        self.assertEqual(table[0]["points"], 3)
+        self.assertEqual(table[0]["points"], 6)
+
+        profile = await self.db.get_user_profile_stats(
+            tournament_id,
+            user["id"],
+        )
+        self.assertEqual(profile["points"], 6)
+        self.assertEqual(profile["exact"], 1)
+        self.assertEqual(profile["differences"], 0)
+        self.assertEqual(profile["outcomes"], 0)
+        self.assertEqual(profile["predictions_count"], 1)
+        self.assertEqual(profile["matches_count"], 1)
 
         await self.db.set_match_result(match_id, 0, 0)
         standings = await self.db.get_round_standings(round_id)
@@ -98,6 +110,17 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.db.delete_match(future_id)
         self.assertIsNone(await self.db.get_match(future_id))
+
+    async def test_team_asset_is_saved_and_updated(self):
+        await self.db.save_team_asset("Арсенал", "https://example.com/arsenal.png")
+        await self.db.save_team_asset("Арсенал", "https://example.com/new.png")
+        async with self.db.connect() as connection:
+            cursor = await connection.execute(
+                "SELECT logo_url FROM team_assets WHERE team_name = ?",
+                ("Арсенал",),
+            )
+            asset = await cursor.fetchone()
+        self.assertEqual(asset["logo_url"], "https://example.com/new.png")
 
     async def test_group_bind_and_participants(self):
         tournament_id = await self.db.create_tournament("UCL", "2026/27")
@@ -141,6 +164,30 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
         prediction = await self.db.get_prediction(participant["id"], match_id)
         self.assertEqual(prediction["home_score"], 1)
         self.assertEqual(prediction["away_score"], 0)
+
+    async def test_pending_prediction_reminder(self):
+        tournament_id = await self.db.create_tournament("UCL", "2026/27")
+        await self.db.create_round(tournament_id, 1)
+        round_id = (await self.db.get_rounds(tournament_id))[0]["id"]
+        kickoff = (
+            datetime.now(timezone.utc) + timedelta(hours=1)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        match_id = await self.db.create_match(
+            round_id,
+            1,
+            "Арсенал",
+            "Наполи",
+            kickoff,
+        )
+        user = await self.db.create_or_update_user(77, "reminder", "Reminder", None)
+        await self.db.ensure_participant(tournament_id, user["id"])
+
+        reminders = await self.db.get_pending_prediction_reminders()
+        self.assertEqual(len(reminders), 1)
+        self.assertEqual(reminders[0]["match_id"], match_id)
+
+        await self.db.mark_prediction_reminder_sent(user["id"], match_id)
+        self.assertEqual(await self.db.get_pending_prediction_reminders(), [])
 
 
 if __name__ == "__main__":

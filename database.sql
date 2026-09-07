@@ -217,6 +217,22 @@ CREATE TABLE IF NOT EXISTS matches (
 
 
 -- ============================================================
+-- TEAM ASSETS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS team_assets (
+
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    team_name       TEXT NOT NULL UNIQUE,
+
+    logo_url        TEXT,
+
+    updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
 -- MATCH RESULTS
 -- ============================================================
 
@@ -335,6 +351,32 @@ CREATE TABLE IF NOT EXISTS prediction_scores (
 
 
 -- ============================================================
+-- PREDICTION REMINDERS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS prediction_reminders (
+
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    user_id         INTEGER NOT NULL,
+
+    match_id        INTEGER NOT NULL,
+
+    sent_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (match_id)
+        REFERENCES matches(id)
+        ON DELETE CASCADE,
+
+    UNIQUE (user_id, match_id)
+);
+
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 
@@ -367,6 +409,9 @@ CREATE INDEX IF NOT EXISTS idx_predictions_participant
 
 CREATE INDEX IF NOT EXISTS idx_predictions_match
     ON predictions(match_id);
+
+CREATE INDEX IF NOT EXISTS idx_prediction_reminders_match
+    ON prediction_reminders(match_id);
 
 
 COMMIT;

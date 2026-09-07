@@ -1,6 +1,11 @@
 import unittest
 
-from utils import ParseError, parse_match_line, parse_score
+from utils import (
+    ParseError,
+    format_match_teams,
+    parse_match_line,
+    parse_score,
+)
 
 
 class ParseScoreTests(unittest.TestCase):
@@ -35,6 +40,21 @@ class ParseMatchLineTests(unittest.TestCase):
     def test_bad_number(self):
         with self.assertRaises(ParseError):
             parse_match_line("19|08.09.2026 21:00|АЕК|ЛАСК")
+
+
+class MatchDisplayTests(unittest.TestCase):
+
+    def test_known_team_gets_flag(self):
+        self.assertEqual(
+            format_match_teams("Арсенал", "Наполи"),
+            "🇬🇧 Арсенал — 🇮🇹 Наполи",
+        )
+
+    def test_unknown_team_keeps_original_name(self):
+        self.assertEqual(
+            format_match_teams("Неизвестный клуб", "Другой клуб"),
+            "Неизвестный клуб — Другой клуб",
+        )
 
 
 if __name__ == "__main__":

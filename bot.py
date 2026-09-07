@@ -8,7 +8,7 @@ from config import BOT_TOKEN
 from database import db
 from handlers.admin import router as admin_router
 from handlers.user import router as user_router
-from jobs import lock_started_matches_loop
+from jobs import lock_started_matches_loop, prediction_reminder_loop
 
 
 logging.basicConfig(
@@ -26,11 +26,13 @@ async def main():
     dispatcher.include_router(user_router)
 
     locker = asyncio.create_task(lock_started_matches_loop())
+    reminders = asyncio.create_task(prediction_reminder_loop(bot))
     print("Бот запущен...")
     try:
         await dispatcher.start_polling(bot)
     finally:
         locker.cancel()
+        reminders.cancel()
         await bot.session.close()
 
 

@@ -6,6 +6,40 @@ from config import TIMEZONE
 
 KICKOFF_STORAGE_FORMAT = "%Y-%m-%d %H:%M:%S"
 KICKOFF_INPUT_FORMAT = "%d.%m.%Y %H:%M"
+KICKOFF_DISPLAY_FORMAT = "%d.%m %H:%M"
+
+
+TEAM_FLAGS = {
+    "арсенал": "🇬🇧",
+    "манчестер сити": "🇬🇧",
+    "манчестер юнайтед": "🇬🇧",
+    "ливерпуль": "🇬🇧",
+    "челси": "🇬🇧",
+    "тоттенхэм": "🇬🇧",
+    "реал мадрид": "🇪🇸",
+    "барселона": "🇪🇸",
+    "атлетико": "🇪🇸",
+    "бенфика": "🇵🇹",
+    "порту": "🇵🇹",
+    "спортинг": "🇵🇹",
+    "бавария": "🇩🇪",
+    "боруссия дортмунд": "🇩🇪",
+    "байер": "🇩🇪",
+    "псж": "🇫🇷",
+    "марсель": "🇫🇷",
+    "интер": "🇮🇹",
+    "милан": "🇮🇹",
+    "ювентус": "🇮🇹",
+    "наполи": "🇮🇹",
+    "аякс": "🇳🇱",
+    "псв": "🇳🇱",
+    "фейеноорд": "🇳🇱",
+    "аек афины": "🇬🇷",
+    "олимпиакос": "🇬🇷",
+    "ласк": "🇦🇹",
+    "галатасарай": "🇹🇷",
+    "шахтер": "🇺🇦",
+}
 
 
 class ParseError(ValueError):
@@ -40,6 +74,22 @@ def format_kickoff_local(kickoff_at: str) -> str:
         ZoneInfo(TIMEZONE)
     )
     return local_datetime.strftime(KICKOFF_INPUT_FORMAT)
+
+
+def format_kickoff_compact(kickoff_at: str) -> str:
+    local_datetime = parse_kickoff_utc(kickoff_at).astimezone(
+        ZoneInfo(TIMEZONE)
+    )
+    return local_datetime.strftime(KICKOFF_DISPLAY_FORMAT)
+
+
+def format_team_name(team_name: str) -> str:
+    flag = TEAM_FLAGS.get(team_name.casefold())
+    return f"{flag} {team_name}" if flag else team_name
+
+
+def format_match_teams(home_team: str, away_team: str) -> str:
+    return f"{format_team_name(home_team)} — {format_team_name(away_team)}"
 
 
 def match_has_started(kickoff_at: str) -> bool:

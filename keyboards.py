@@ -12,6 +12,7 @@ def user_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="🏆 Таблица"),
                 KeyboardButton(text="📚 Архив"),
             ],
+            [KeyboardButton(text="👤 Профиль")],
             [
                 KeyboardButton(text="ℹ️ Правила"),
             ],

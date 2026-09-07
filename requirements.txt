@@ -1,4 +1,5 @@
 aiogram
 aiosqlite
+httpx
 python-dotenv
 tzdata

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -37,14 +38,6 @@ class Database:
             cursor = await db.execute(
                 "SELECT * FROM users WHERE telegram_id = ?",
                 (telegram_id,),
-            )
-            return await cursor.fetchone()
-
-    async def get_user_by_id(self, user_id: int):
-        async with self.connect() as db:
-            cursor = await db.execute(
-                "SELECT * FROM users WHERE id = ?",
-                (user_id,),
             )
             return await cursor.fetchone()
 
@@ -118,13 +111,6 @@ class Database:
                 """
             )
             return await cursor.fetchall()
-
-    async def set_tournament_status(self, tournament_id: int, status: str):
-        async with self.connect() as db:
-            await db.execute(
-                "UPDATE tournaments SET status = ? WHERE id = ?",
-                (status, tournament_id),
-            )
 
     async def get_rounds(self, tournament_id: int):
         async with self.connect() as db:
@@ -307,13 +293,6 @@ class Database:
                 (match_id,),
             )
 
-    async def set_match_status(self, match_id: int, status: str):
-        async with self.connect() as db:
-            await db.execute(
-                "UPDATE matches SET status = ? WHERE id = ?",
-                (status, match_id),
-            )
-
     def match_locked_for_admin(self, match) -> bool:
         if match["status"] in ("live", "finished"):
             return True
@@ -469,22 +448,6 @@ class Database:
                 (is_active, participant_id),
             )
 
-    async def get_open_matches_for_round(self, round_id: int):
-        now = utc_now_str()
-        async with self.connect() as db:
-            cursor = await db.execute(
-                """
-                SELECT m.*
-                FROM matches m
-                WHERE m.round_id = ?
-                  AND m.status = 'scheduled'
-                  AND m.kickoff_at > ?
-                ORDER BY m.match_number
-                """,
-                (round_id, now),
-            )
-            return await cursor.fetchall()
-
     async def get_rounds_with_open_matches(self, tournament_id: int):
         now = utc_now_str()
         async with self.connect() as db:
@@ -528,6 +491,56 @@ class Database:
                 (participant_id, match_id),
             )
             return await cursor.fetchone()
+
+    async def get_pending_prediction_reminders(self, hours: int = 2):
+        now = datetime.now(timezone.utc)
+        reminder_until = now + timedelta(hours=hours)
+        now_text = now.strftime("%Y-%m-%d %H:%M:%S")
+        until_text = reminder_until.strftime("%Y-%m-%d %H:%M:%S")
+        async with self.connect() as db:
+            cursor = await db.execute(
+                """
+                SELECT
+                    u.id AS user_id,
+                    u.telegram_id,
+                    m.id AS match_id,
+                    m.match_number,
+                    m.home_team,
+                    m.away_team,
+                    m.kickoff_at,
+                    r.round_number
+                FROM participants p
+                JOIN users u ON u.id = p.user_id
+                JOIN rounds r ON r.tournament_id = p.tournament_id
+                JOIN matches m ON m.round_id = r.id
+                LEFT JOIN predictions pr
+                    ON pr.participant_id = p.id
+                   AND pr.match_id = m.id
+                LEFT JOIN prediction_reminders rem
+                    ON rem.user_id = u.id
+                   AND rem.match_id = m.id
+                WHERE p.is_active = 1
+                  AND u.is_active = 1
+                  AND m.status = 'scheduled'
+                  AND m.kickoff_at > ?
+                  AND m.kickoff_at <= ?
+                  AND pr.id IS NULL
+                  AND rem.id IS NULL
+                ORDER BY m.kickoff_at, u.id
+                """,
+                (now_text, until_text),
+            )
+            return await cursor.fetchall()
+
+    async def mark_prediction_reminder_sent(self, user_id: int, match_id: int):
+        async with self.connect() as db:
+            await db.execute(
+                """
+                INSERT OR IGNORE INTO prediction_reminders (user_id, match_id)
+                VALUES (?, ?)
+                """,
+                (user_id, match_id),
+            )
 
     async def upsert_prediction(
         self,
@@ -886,6 +899,50 @@ class Database:
                 (tournament_id,),
             )
             return await cursor.fetchall()
+
+    async def get_user_profile_stats(self, tournament_id: int, user_id: int):
+        async with self.connect() as db:
+            cursor = await db.execute(
+                """
+                SELECT
+                    p.id AS participant_id,
+                    p.is_active,
+                    COALESCE(SUM(ps.points), 0) AS points,
+                    COALESCE(SUM(ps.exact_score), 0) AS exact,
+                    COALESCE(SUM(ps.correct_difference), 0) AS differences,
+                    COALESCE(SUM(ps.correct_outcome), 0) AS outcomes,
+                    COUNT(DISTINCT pr.id) AS predictions_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM matches m
+                        JOIN rounds r ON r.id = m.round_id
+                        WHERE r.tournament_id = ?
+                    ) AS matches_count
+                FROM participants p
+                LEFT JOIN predictions pr ON pr.participant_id = p.id
+                LEFT JOIN prediction_scores ps ON ps.prediction_id = pr.id
+                WHERE p.tournament_id = ? AND p.user_id = ?
+                GROUP BY p.id
+                """,
+                (tournament_id, tournament_id, user_id),
+            )
+            return await cursor.fetchone()
+
+    async def save_team_asset(self, team_name: str, logo_url: str | None):
+        if not logo_url:
+            return
+        async with self.connect() as db:
+            await db.execute(
+                """
+                INSERT INTO team_assets (team_name, logo_url, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(team_name)
+                DO UPDATE SET
+                    logo_url = excluded.logo_url,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (team_name, logo_url),
+            )
 
     async def predicted_count_for_round(
         self,

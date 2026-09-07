@@ -14,8 +14,9 @@ from access import (
     reject_if_not_admin_message,
 )
 from broadcast import broadcast_chunks
-from config import ADMIN_TELEGRAM_ID
+from config import ADMIN_TELEGRAM_ID, FOOTBALL_DATA_API_TOKEN
 from database import db
+from football_api import FootballApiError, get_champions_league_matchday
 from keyboards import admin_keyboard, user_keyboard
 from states import (
     AddMatches,
@@ -28,6 +29,7 @@ from states import (
 from utils import (
     ParseError,
     chunk_text,
+    format_match_teams,
     format_kickoff_local,
     match_has_started,
     parse_match_line,
@@ -367,6 +369,12 @@ async def show_round_menu(callback: CallbackQuery, round_id: int):
         ],
         [
             InlineKeyboardButton(
+                text="🌐 Загрузить из API",
+                callback_data=f"adm:m:api:{round_id}",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="➕ Добавить один матч",
                 callback_data=f"adm:m:add1:{round_id}",
             )
@@ -424,6 +432,78 @@ async def round_menu_callback(callback: CallbackQuery):
     await show_round_menu(callback, int(callback.data.split(":")[-1]))
 
 
+@router.callback_query(F.data.startswith("adm:m:api:"))
+async def import_matches_from_api_callback(callback: CallbackQuery):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    if not FOOTBALL_DATA_API_TOKEN:
+        await callback.answer(
+            "Не задан FOOTBALL_DATA_API_TOKEN",
+            show_alert=True,
+        )
+        return
+
+    round_id = int(callback.data.split(":")[-1])
+    round_item = await db.get_round(round_id)
+    if round_item is None:
+        await callback.answer("❌ Тур не найден", show_alert=True)
+        return
+
+    existing = await db.get_matches(round_id)
+    if existing:
+        await callback.answer(
+            "В туре уже есть матчи. Импорт отменён.",
+            show_alert=True,
+        )
+        return
+
+    tournament = await db.get_tournament(round_item["tournament_id"])
+    await callback.answer("Запрашиваю матчи...")
+    try:
+        matches = await get_champions_league_matchday(
+            FOOTBALL_DATA_API_TOKEN,
+            round_item["round_number"],
+            tournament["season"] if tournament else None,
+        )
+    except FootballApiError as error:
+        await callback.message.answer(f"❌ {error}")
+        return
+
+    if not matches:
+        await callback.message.answer(
+            "❌ API не вернул матчи для этого тура."
+        )
+        return
+
+    try:
+        for match in matches:
+            await db.create_match(
+                round_id=round_id,
+                match_number=match["match_number"],
+                home_team=match["home_team"],
+                away_team=match["away_team"],
+                kickoff_at=match["kickoff_at"],
+            )
+            await db.save_team_asset(
+                match["home_team"],
+                match.get("home_logo_url"),
+            )
+            await db.save_team_asset(
+                match["away_team"],
+                match.get("away_logo_url"),
+            )
+    except Exception:
+        await callback.message.answer(
+            "❌ Не удалось сохранить матчи из API. Импорт остановлен."
+        )
+        return
+
+    await callback.message.answer(
+        f"✅ Из API загружено матчей: {len(matches)}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Matches
 # ---------------------------------------------------------------------------
@@ -454,8 +534,8 @@ async def show_matches(callback: CallbackQuery, round_id: int):
         if match["result_home"] is not None:
             result = f" [{match['result_home']}:{match['result_away']}]"
         text += (
-            f"{match['match_number']}. {local_time} — "
-            f"{match['home_team']} — {match['away_team']}{result}\n"
+            f"{match['match_number']}. {format_match_teams(match['home_team'], match['away_team'])}\n"
+            f"   {local_time}{result}\n"
         )
         buttons.append(
             [
