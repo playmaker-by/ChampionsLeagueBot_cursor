@@ -19,6 +19,10 @@ COUNTRY_CODES = {
     "Greece": "GRC",
     "Austria": "AUT",
     "Belgium": "BEL",
+    "Norway": "NOR",
+    "Azerbaijan": "AZE",
+    "Czech Republic": "CZE",
+    "Slovakia": "SVK",
     "Scotland": "SCO",
     "Switzerland": "CHE",
 }

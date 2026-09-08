@@ -62,6 +62,28 @@ class MatchDisplayTests(unittest.TestCase):
             "🇬🇧 Арсенал — 🇮🇹 Наполи",
         )
 
+    def test_api_team_names_and_country_codes_get_display_data(self):
+        self.assertEqual(
+            format_match_teams(
+                "Bodo/Glimt",
+                "FC Porto",
+                home_country_code="NOR",
+                away_country_code="POR",
+            ),
+            "🇳🇴 Буде-Глимт — 🇵🇹 Порту",
+        )
+
+    def test_api_country_code_aliases_get_flags(self):
+        self.assertEqual(
+            format_match_teams(
+                "AEK Athens FC",
+                "Slovan Bratislava",
+                home_country_code="GRE",
+                away_country_code="SVK",
+            ),
+            "🇬🇷 АЕК Афины — 🇸🇰 Слован Братислава",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
