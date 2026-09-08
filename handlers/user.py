@@ -817,7 +817,7 @@ async def archive_round_callback(callback: CallbackQuery):
                 if row["pred_home"] is not None
                 else "—"
             )
-            fact = (
+            score = (
                 f"{row['result_home']}:{row['result_away']}"
                 if row["result_home"] is not None
                 else "—"
@@ -825,7 +825,7 @@ async def archive_round_callback(callback: CallbackQuery):
             points = "—" if row["points"] is None else str(row["points"])
             extra += (
                 f"{row['match_number']}. {row['home_team']} — {row['away_team']}: "
-                f"{pred} / факт {fact} ({points} очк.)\n"
+                f"прогноз {pred} / счёт {score} ({points} очк.)\n"
             )
 
     text = table + extra
