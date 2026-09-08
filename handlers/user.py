@@ -590,16 +590,16 @@ async def my_predictions_round(callback: CallbackQuery):
             if row["pred_home"] is not None
             else "—"
         )
-        fact = (
-            f"факт {row['result_home']}:{row['result_away']}"
+        score = (
+            f"{row['result_home']}:{row['result_away']}"
             if row["result_home"] is not None
-            else "ещё не состоялся"
+            else "—"
         )
         points = "" if row["points"] is None else f"  ({row['points']} очк.)"
         text += (
             f"{row['match_number']}. "
             f"{format_match_teams(row['home_team'], row['away_team'], row['home_display_name'], row['away_display_name'], row['home_country_code'], row['away_country_code'], row['home_flag_emoji'], row['away_flag_emoji'])}\n"
-            f"   прогноз {pred} | факт {fact}{points}\n"
+            f"   прогноз {pred} | счёт {score}{points}\n"
         )
 
     keyboard = InlineKeyboardMarkup(
