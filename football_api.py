@@ -73,6 +73,7 @@ async def get_champions_league_matchday(
         kickoff = match.get("utcDate")
         if not home.get("name") or not away.get("name") or not kickoff:
             continue
+        full_time = (match.get("score") or {}).get("fullTime") or {}
         result.append(
             {
                 "match_number": len(result) + 1,
@@ -85,6 +86,8 @@ async def get_champions_league_matchday(
                 "away_country_code": (away.get("area") or {}).get("countryCode")
                 or COUNTRY_CODES.get((away.get("area") or {}).get("name")),
                 "kickoff_at": api_datetime_to_storage(kickoff),
+                "result_home": full_time.get("home"),
+                "result_away": full_time.get("away"),
             }
         )
     return result

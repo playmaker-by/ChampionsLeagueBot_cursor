@@ -41,6 +41,15 @@ from utils import (
 router = Router()
 router.message.filter(F.from_user.id == ADMIN_TELEGRAM_ID)
 
+ROUND_STATUS_LABELS = {
+    "open": "открыт",
+    "upcoming": "ожидается",
+}
+
+
+def round_status_label(status: str) -> str:
+    return ROUND_STATUS_LABELS.get(status, status)
+
 
 @router.message(Command("cancel"))
 async def cancel_admin_handler(message: Message, state: FSMContext):
@@ -293,7 +302,7 @@ async def show_rounds(callback: CallbackQuery, tournament_id: int):
             InlineKeyboardButton(
                 text=(
                     f"📅 Тур {item['round_number']} "
-                    f"({item['status']})"
+                    f"({round_status_label(item['status'])})"
                 ),
                 callback_data=f"adm:r:{item['id']}",
             )
@@ -317,7 +326,10 @@ async def show_rounds(callback: CallbackQuery, tournament_id: int):
     if rounds:
         text = f"📅 Туры турнира\n\nСоздано туров: {len(rounds)}\n\n"
         for item in rounds:
-            text += f"Тур {item['round_number']} — {item['status']}\n"
+            text += (
+                f"Тур {item['round_number']} — "
+                f"{round_status_label(item['status'])}\n"
+            )
     else:
         text = (
             "📅 Туры турнира\n\n"
@@ -419,7 +431,7 @@ async def show_round_menu(callback: CallbackQuery, round_id: int):
         callback,
         "📅 Управление туром\n\n"
         f"Тур: {round_item['round_number']}\n"
-        f"Статус: {round_item['status']}\n\n"
+        f"Статус: {round_status_label(round_item['status'])}\n\n"
         "Выбери действие:",
         InlineKeyboardMarkup(inline_keyboard=buttons),
     )
@@ -1412,7 +1424,10 @@ async def show_results_rounds(callback: CallbackQuery, tournament_id: int):
     buttons = [
         [
             InlineKeyboardButton(
-                text=f"Тур {item['round_number']} ({item['status']})",
+                text=(
+                    f"Тур {item['round_number']} "
+                    f"({round_status_label(item['status'])})"
+                ),
                 callback_data=f"adm:res:r:{item['id']}",
             )
         ]
@@ -1449,15 +1464,23 @@ async def results_round_matches(callback: CallbackQuery):
         return
 
     text = f"📥 Результаты — Тур {round_item['round_number']}\n\n"
-    buttons = []
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="🌐 Загрузить результаты из API",
+                callback_data=f"adm:res:api:{round_id}",
+            )
+        ]
+    ]
     for match in matches:
         if match["result_home"] is not None:
             score = f"{match['result_home']}:{match['result_away']}"
         else:
             score = "—"
         text += (
-            f"{match['match_number']}. {match['home_team']} — "
-            f"{match['away_team']}: {score}\n"
+            f"{match['match_number']}. "
+            f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
+            f"   Счёт: {score}\n"
         )
         buttons.append(
             [
@@ -1474,6 +1497,73 @@ async def results_round_matches(callback: CallbackQuery):
         text,
         InlineKeyboardMarkup(inline_keyboard=buttons),
     )
+
+
+@router.callback_query(F.data.startswith("adm:res:api:"))
+async def import_results_from_api_callback(callback: CallbackQuery):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    if not FOOTBALL_DATA_API_TOKEN:
+        await callback.answer(
+            "Не задан FOOTBALL_DATA_API_TOKEN",
+            show_alert=True,
+        )
+        return
+
+    round_id = int(callback.data.split(":")[-1])
+    round_item = await db.get_round(round_id)
+    if round_item is None:
+        await callback.answer("❌ Тур не найден", show_alert=True)
+        return
+
+    tournament = await db.get_tournament(round_item["tournament_id"])
+    await callback.answer("Запрашиваю результаты...")
+    try:
+        api_matches = await get_champions_league_matchday(
+            FOOTBALL_DATA_API_TOKEN,
+            round_item["round_number"],
+            tournament["season"] if tournament else None,
+        )
+    except FootballApiError as error:
+        await callback.message.answer(f"❌ {error}")
+        return
+
+    matches = await db.get_matches(round_id)
+    matches_by_teams = {
+        (
+            match["home_team"].strip().casefold(),
+            match["away_team"].strip().casefold(),
+        ): match
+        for match in matches
+    }
+    updated = 0
+    unmatched = 0
+    for api_match in api_matches:
+        if api_match["result_home"] is None or api_match["result_away"] is None:
+            continue
+        match = matches_by_teams.get(
+            (
+                api_match["home_team"].strip().casefold(),
+                api_match["away_team"].strip().casefold(),
+            )
+        )
+        if match is None:
+            unmatched += 1
+            continue
+        await db.set_match_result(
+            match["id"],
+            api_match["result_home"],
+            api_match["result_away"],
+        )
+        updated += 1
+
+    await callback.message.answer(
+        "✅ Результаты из API обработаны.\n\n"
+        f"Обновлено матчей: {updated}\n"
+        f"Без совпадения: {unmatched}"
+    )
+    await results_round_matches(callback)
 
 
 @router.callback_query(F.data.startswith("adm:res:m:"))
@@ -1740,7 +1830,10 @@ async def admin_results_handler(message: Message):
         buttons = [
             [
                 InlineKeyboardButton(
-                    text=f"Тур {item['round_number']} ({item['status']})",
+                    text=(
+                        f"Тур {item['round_number']} "
+                        f"({round_status_label(item['status'])})"
+                    ),
                     callback_data=f"adm:res:r:{item['id']}",
                 )
             ]
