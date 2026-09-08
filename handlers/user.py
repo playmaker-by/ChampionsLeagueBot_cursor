@@ -101,6 +101,13 @@ async def start_handler(message: Message, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "u:home")
+async def home_callback(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer()
+    await start_handler(callback.message, state)
+
+
 @router.message(Command("rules"))
 @router.message(F.text == "ℹ️ Правила")
 async def rules_handler(message: Message):
@@ -468,20 +475,33 @@ async def prediction_score_handler(message: Message, state: FSMContext):
         await message.answer("Приём прогнозов на этот матч уже закрыт.")
         return
 
+    predicted, total = await db.predicted_count_for_round(
+        participant["id"],
+        match["round_id"],
+    )
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="➡️ Другой матч этого тура",
+                callback_data=f"u:pr:r:{match['round_id']}",
+            )
+        ]
+    ]
+    if predicted == total:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="↩️ Вернуться на главную",
+                    callback_data="u:home",
+                )
+            ]
+        )
+
     await message.answer(
         "✅ Прогноз сохранён.\n\n"
         f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
         f"Счёт: {home_score}:{away_score}",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="➡️ Другой матч этого тура",
-                        callback_data=f"u:pr:r:{match['round_id']}",
-                    )
-                ]
-            ]
-        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
 
