@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS team_assets (
     updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT OR IGNORE INTO team_assets (
+INSERT INTO team_assets (
     team_name,
     display_name,
     country_code,
@@ -245,8 +245,8 @@ INSERT OR IGNORE INTO team_assets (
 )
 VALUES
     ('AEK Athens FC', 'АЕК Афины', 'GRE', '🇬🇷'),
-    ('Arsenal', 'Арсенал', 'ENG', '🏴'),
-    ('Aston Villa', 'Астон Вилла', 'ENG', '🏴'),
+    ('Arsenal', 'Арсенал', 'ENG', '🇬🇧'),
+    ('Aston Villa', 'Астон Вилла', 'ENG', '🇬🇧'),
     ('Atletico Madrid', 'Атлетико Мадрид', 'ESP', '🇪🇸'),
     ('Barcelona', 'Барселона', 'ESP', '🇪🇸'),
     ('Bayern München', 'Бавария', 'DEU', '🇩🇪'),
@@ -262,9 +262,9 @@ VALUES
     ('RB Leipzig', 'Лейпциг', 'DEU', '🇩🇪'),
     ('Lens', 'Ланс', 'FRA', '🇫🇷'),
     ('Lille', 'Лилль', 'FRA', '🇫🇷'),
-    ('Liverpool', 'Ливерпуль', 'ENG', '🏴'),
-    ('Manchester City', 'Манчестер Сити', 'ENG', '🏴'),
-    ('Manchester United', 'Манчестер Юнайтед', 'ENG', '🏴'),
+    ('Liverpool', 'Ливерпуль', 'ENG', '🇬🇧'),
+    ('Manchester City', 'Манчестер Сити', 'ENG', '🇬🇧'),
+    ('Manchester United', 'Манчестер Юнайтед', 'ENG', '🇬🇧'),
     ('Napoli', 'Наполи', 'ITA', '🇮🇹'),
     ('Paris Saint Germain', 'Пари Сен-Жермен', 'FRA', '🇫🇷'),
     ('FC Porto', 'Порту', 'POR', '🇵🇹'),
@@ -279,7 +279,13 @@ VALUES
     ('Sporting CP', 'Спортинг', 'POR', '🇵🇹'),
     ('VfB Stuttgart', 'Штутгарт', 'DEU', '🇩🇪'),
     ('Viking', 'Викинг', 'NOR', '🇳🇴'),
-    ('Villarreal', 'Вильяреал', 'ESP', '🇪🇸');
+    ('Villarreal', 'Вильяреал', 'ESP', '🇪🇸')
+ON CONFLICT(team_name)
+DO UPDATE SET
+    display_name = excluded.display_name,
+    country_code = excluded.country_code,
+    flag_emoji = excluded.flag_emoji,
+    updated_at = CURRENT_TIMESTAMP;
 
 
 -- ============================================================
