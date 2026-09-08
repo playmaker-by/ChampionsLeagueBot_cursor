@@ -242,8 +242,18 @@ async def prediction_round_callback(
     predictions_by_match = {
         row["id"]: row for row in predictions if row["pred_home"] is not None
     }
-    buttons = []
-    text = f"📝 Прогнозы — Тур {round_item['round_number']}\n\n"
+    await callback.answer()
+    await callback.message.edit_text(
+        f"📝 Прогнозы — Тур {round_item['round_number']}",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                back_button(
+                    "↩️ К турам",
+                    f"u:pr:t:{round_item['tournament_id']}",
+                )
+            ]
+        ),
+    )
 
     for match in matches:
         prediction = predictions_by_match.get(match["id"])
@@ -254,37 +264,30 @@ async def prediction_round_callback(
             mark = "—"
 
         status = "🔒 закрыт" if started else (f"✅ {mark}" if prediction else "—")
-        text += (
-            f"{match['match_number']}. "
-            f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
-            f"   {format_kickoff_compact(match['kickoff_at'])} · {status}\n"
-        )
-
+        keyboard = None
         if not started:
-            buttons.append(
-                [
-                    InlineKeyboardButton(
-                        text=(
-                            f"✏️ Изменить прогноз №{match['match_number']}"
-                            if prediction
-                            else f"➕ Добавить прогноз №{match['match_number']}"
-                        ),
-                        callback_data=f"u:pr:m:{match['id']}",
-                    )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=(
+                                "✏️ Изменить прогноз"
+                                if prediction
+                                else "➕ Добавить прогноз"
+                            ),
+                            callback_data=f"u:pr:m:{match['id']}",
+                        )
+                    ]
                 ]
             )
 
-    if not buttons:
-        text += "\nВсе матчи этого тура уже закрыты для прогнозов."
-
-    buttons.append(
-        back_button("↩️ К турам", f"u:pr:t:{round_item['tournament_id']}")
-    )
-    await send_or_edit(
-        callback,
-        text,
-        InlineKeyboardMarkup(inline_keyboard=buttons),
-    )
+        await callback.message.answer(
+            f"{match['match_number']}. "
+            f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
+            f"   {format_kickoff_compact(match['kickoff_at'])} · {status}\n"
+            f"   Прогноз: {mark}",
+            reply_markup=keyboard,
+        )
 
 
 @router.callback_query(F.data.startswith("u:pr:m:"))
