@@ -27,6 +27,15 @@ from utils import (
 router = Router()
 router.message.filter(F.chat.type == "private")
 
+ROUND_STATUS_LABELS = {
+    "open": "открыт",
+    "upcoming": "ожидается",
+}
+
+
+def round_status_label(status: str) -> str:
+    return ROUND_STATUS_LABELS.get(status, status)
+
 
 def back_button(text: str, callback_data: str):
     return [InlineKeyboardButton(text=text, callback_data=callback_data)]
@@ -200,7 +209,11 @@ async def prediction_tournament_callback(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("u:pr:r:"))
-async def prediction_round_callback(callback: CallbackQuery):
+async def prediction_round_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    await state.clear()
     round_id = int(callback.data.split(":")[-1])
     await db.lock_started_matches(round_id)
 
@@ -248,11 +261,14 @@ async def prediction_round_callback(callback: CallbackQuery):
         )
 
         if not started:
-            label = f"№{match['match_number']} · {mark}"
             buttons.append(
                 [
                     InlineKeyboardButton(
-                        text=label,
+                        text=(
+                            f"✏️ Изменить прогноз №{match['match_number']}"
+                            if prediction
+                            else f"➕ Добавить прогноз №{match['match_number']}"
+                        ),
                         callback_data=f"u:pr:m:{match['id']}",
                     )
                 ]
@@ -301,15 +317,79 @@ async def prediction_match_callback(
         )
         return
 
+    await show_prediction_form(callback, state, match)
+
+
+async def show_prediction_form(
+    callback: CallbackQuery,
+    state: FSMContext,
+    match,
+):
     await state.set_state(EnterPrediction.score)
-    await state.update_data(match_id=match_id)
+    await state.update_data(match_id=match["id"])
     await callback.answer()
-    await callback.message.answer(
+    current = ""
+    db_user = await db.get_user(callback.from_user.id)
+    if db_user:
+        participant = await db.get_participant(
+            match["tournament_id"],
+            db_user["id"],
+        )
+        if participant:
+            prediction = await db.get_prediction(participant["id"], match["id"])
+            if prediction:
+                current = (
+                    f"\nТекущий прогноз: "
+                    f"{prediction['home_score']}:{prediction['away_score']}"
+                )
+
+    matches = await db.get_matches(match["round_id"])
+    next_match = next(
+        (
+            item for item in matches
+            if item["match_number"] > match["match_number"]
+            and not match_has_started(item["kickoff_at"])
+            and item["status"] == "scheduled"
+        ),
+        None,
+    )
+    buttons = [
+        back_button("↩️ К матчам", f"u:pr:r:{match['round_id']}"),
+    ]
+    if next_match:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="➡️ Следующий матч",
+                    callback_data=f"u:pr:next:{next_match['id']}",
+                )
+            ]
+        )
+
+    await callback.message.edit_text(
         "Введи счёт в формате 2:1\n\n"
         f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
-        f"Начало: {format_kickoff_local(match['kickoff_at'])}\n\n"
-        "Отмена: /cancel"
+        f"Начало: {format_kickoff_local(match['kickoff_at'])}"
+        f"{current}\n\n"
+        "После ввода счёта можно перейти к следующему матчу.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
+
+
+@router.callback_query(F.data.startswith("u:pr:next:"))
+async def next_prediction_match_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    match_id = int(callback.data.split(":")[-1])
+    match = await db.get_match(match_id)
+    if match is None:
+        await callback.answer("Матч не найден", show_alert=True)
+        return
+    if match_has_started(match["kickoff_at"]) or match["status"] != "scheduled":
+        await callback.answer("Приём прогнозов на этот матч закрыт", show_alert=True)
+        return
+    await show_prediction_form(callback, state, match)
 
 
 @router.message(EnterPrediction.score)
@@ -415,7 +495,10 @@ async def show_my_rounds(message: Message, tournament_id: int, user_id: int):
     buttons = [
         [
             InlineKeyboardButton(
-                text=f"Тур {item['round_number']} ({item['status']})",
+                text=(
+                    f"Тур {item['round_number']} "
+                    f"({round_status_label(item['status'])})"
+                ),
                 callback_data=f"u:my:r:{item['id']}",
             )
         ]
@@ -439,7 +522,10 @@ async def my_predictions_tournament(callback: CallbackQuery):
     buttons = [
         [
             InlineKeyboardButton(
-                text=f"Тур {item['round_number']} ({item['status']})",
+                text=(
+                    f"Тур {item['round_number']} "
+                    f"({round_status_label(item['status'])})"
+                ),
                 callback_data=f"u:my:r:{item['id']}",
             )
         ]
@@ -488,9 +574,9 @@ async def my_predictions_round(callback: CallbackQuery):
             else "—"
         )
         fact = (
-            f"{row['result_home']}:{row['result_away']}"
+            f"факт {row['result_home']}:{row['result_away']}"
             if row["result_home"] is not None
-            else "ещё нет"
+            else "ещё не состоялся"
         )
         points = "" if row["points"] is None else f"  ({row['points']} очк.)"
         text += (
