@@ -536,7 +536,7 @@ async def show_matches(callback: CallbackQuery, round_id: int):
         if match["result_home"] is not None:
             result = f" [{match['result_home']}:{match['result_away']}]"
         text += (
-            f"{match['match_number']}. {format_match_teams(match['home_team'], match['away_team'])}\n"
+            f"{match['match_number']}. {format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
             f"   {local_time}{result}\n"
         )
         buttons.append(

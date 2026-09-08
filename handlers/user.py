@@ -243,7 +243,7 @@ async def prediction_round_callback(callback: CallbackQuery):
         status = "🔒 закрыт" if started else (f"✅ {mark}" if prediction else "—")
         text += (
             f"{match['match_number']}. "
-            f"{format_match_teams(match['home_team'], match['away_team'])}\n"
+            f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
             f"   {format_kickoff_compact(match['kickoff_at'])} · {status}\n"
         )
 
@@ -306,7 +306,7 @@ async def prediction_match_callback(
     await callback.answer()
     await callback.message.answer(
         "Введи счёт в формате 2:1\n\n"
-        f"{format_match_teams(match['home_team'], match['away_team'])}\n"
+        f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
         f"Начало: {format_kickoff_local(match['kickoff_at'])}\n\n"
         "Отмена: /cancel"
     )
@@ -373,7 +373,7 @@ async def prediction_score_handler(message: Message, state: FSMContext):
 
     await message.answer(
         "✅ Прогноз сохранён.\n\n"
-        f"{format_match_teams(match['home_team'], match['away_team'])}\n"
+        f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
         f"Счёт: {home_score}:{away_score}",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
@@ -495,7 +495,7 @@ async def my_predictions_round(callback: CallbackQuery):
         points = "" if row["points"] is None else f"  ({row['points']} очк.)"
         text += (
             f"{row['match_number']}. "
-            f"{format_match_teams(row['home_team'], row['away_team'])}\n"
+            f"{format_match_teams(row['home_team'], row['away_team'], row['home_display_name'], row['away_display_name'], row['home_country_code'], row['away_country_code'], row['home_flag_emoji'], row['away_flag_emoji'])}\n"
             f"   прогноз {pred} | факт {fact}{points}\n"
         )
 

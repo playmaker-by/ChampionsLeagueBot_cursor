@@ -38,6 +38,14 @@ class Database:
                 await db.execute(
                     "ALTER TABLE team_assets ADD COLUMN country_code TEXT"
                 )
+            if "display_name" not in columns:
+                await db.execute(
+                    "ALTER TABLE team_assets ADD COLUMN display_name TEXT"
+                )
+            if "flag_emoji" not in columns:
+                await db.execute(
+                    "ALTER TABLE team_assets ADD COLUMN flag_emoji TEXT"
+                )
 
     async def get_user(self, telegram_id: int):
         async with self.connect() as db:
@@ -211,9 +219,19 @@ class Database:
                 """
                 SELECT
                     m.*,
+                    home_asset.display_name AS home_display_name,
+                    home_asset.country_code AS home_country_code,
+                    home_asset.flag_emoji AS home_flag_emoji,
+                    away_asset.display_name AS away_display_name,
+                    away_asset.country_code AS away_country_code,
+                    away_asset.flag_emoji AS away_flag_emoji,
                     mr.home_score AS result_home,
                     mr.away_score AS result_away
                 FROM matches m
+                LEFT JOIN team_assets home_asset
+                    ON home_asset.team_name = m.home_team
+                LEFT JOIN team_assets away_asset
+                    ON away_asset.team_name = m.away_team
                 LEFT JOIN match_results mr ON mr.match_id = m.id
                 WHERE m.round_id = ?
                 ORDER BY m.match_number
@@ -228,12 +246,22 @@ class Database:
                 """
                 SELECT
                     m.*,
+                    home_asset.display_name AS home_display_name,
+                    home_asset.country_code AS home_country_code,
+                    home_asset.flag_emoji AS home_flag_emoji,
+                    away_asset.display_name AS away_display_name,
+                    away_asset.country_code AS away_country_code,
+                    away_asset.flag_emoji AS away_flag_emoji,
                     mr.home_score AS result_home,
                     mr.away_score AS result_away,
                     r.tournament_id,
                     r.round_number
                 FROM matches m
                 JOIN rounds r ON r.id = m.round_id
+                LEFT JOIN team_assets home_asset
+                    ON home_asset.team_name = m.home_team
+                LEFT JOIN team_assets away_asset
+                    ON away_asset.team_name = m.away_team
                 LEFT JOIN match_results mr ON mr.match_id = m.id
                 WHERE m.id = ?
                 """,
@@ -513,12 +541,22 @@ class Database:
                     m.match_number,
                     m.home_team,
                     m.away_team,
+                    home_asset.display_name AS home_display_name,
+                    home_asset.country_code AS home_country_code,
+                    home_asset.flag_emoji AS home_flag_emoji,
+                    away_asset.display_name AS away_display_name,
+                    away_asset.country_code AS away_country_code,
+                    away_asset.flag_emoji AS away_flag_emoji,
                     m.kickoff_at,
                     r.round_number
                 FROM participants p
                 JOIN users u ON u.id = p.user_id
                 JOIN rounds r ON r.tournament_id = p.tournament_id
                 JOIN matches m ON m.round_id = r.id
+                LEFT JOIN team_assets home_asset
+                    ON home_asset.team_name = m.home_team
+                LEFT JOIN team_assets away_asset
+                    ON away_asset.team_name = m.away_team
                 LEFT JOIN predictions pr
                     ON pr.participant_id = p.id
                    AND pr.match_id = m.id
@@ -618,12 +656,22 @@ class Database:
                 """
                 SELECT
                     m.*,
+                    home_asset.display_name AS home_display_name,
+                    home_asset.country_code AS home_country_code,
+                    home_asset.flag_emoji AS home_flag_emoji,
+                    away_asset.display_name AS away_display_name,
+                    away_asset.country_code AS away_country_code,
+                    away_asset.flag_emoji AS away_flag_emoji,
                     pr.home_score AS pred_home,
                     pr.away_score AS pred_away,
                     mr.home_score AS result_home,
                     mr.away_score AS result_away,
                     ps.points
                 FROM matches m
+                LEFT JOIN team_assets home_asset
+                    ON home_asset.team_name = m.home_team
+                LEFT JOIN team_assets away_asset
+                    ON away_asset.team_name = m.away_team
                 LEFT JOIN predictions pr
                     ON pr.match_id = m.id
                    AND pr.participant_id = ?
@@ -939,6 +987,8 @@ class Database:
         team_name: str,
         logo_url: str | None,
         country_code: str | None = None,
+        display_name: str | None = None,
+        flag_emoji: str | None = None,
     ):
         if not logo_url and not country_code:
             return
@@ -947,21 +997,37 @@ class Database:
                 """
                 INSERT INTO team_assets (
                     team_name,
+                    display_name,
                     logo_url,
                     country_code,
+                    flag_emoji,
                     updated_at
                 )
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(team_name)
                 DO UPDATE SET
                     logo_url = COALESCE(excluded.logo_url, team_assets.logo_url),
+                    display_name = COALESCE(
+                        excluded.display_name,
+                        team_assets.display_name
+                    ),
                     country_code = COALESCE(
                         excluded.country_code,
                         team_assets.country_code
                     ),
+                    flag_emoji = COALESCE(
+                        excluded.flag_emoji,
+                        team_assets.flag_emoji
+                    ),
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (team_name, logo_url, country_code),
+                (
+                    team_name,
+                    display_name,
+                    logo_url,
+                    country_code,
+                    flag_emoji,
+                ),
             )
 
     async def predicted_count_for_round(

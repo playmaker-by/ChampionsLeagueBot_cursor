@@ -93,6 +93,23 @@ TEAM_NAMES_RU = {
     "feyenoord": "Фейеноорд",
 }
 
+COUNTRY_FLAGS = {
+    "AUT": "🇦🇹",
+    "BEL": "🇧🇪",
+    "CHE": "🇨🇭",
+    "DEU": "🇩🇪",
+    "ENG": "🇬🇧",
+    "ESP": "🇪🇸",
+    "FRA": "🇫🇷",
+    "GRC": "🇬🇷",
+    "ITA": "🇮🇹",
+    "NED": "🇳🇱",
+    "PRT": "🇵🇹",
+    "SCO": "🏴", 
+    "TUR": "🇹🇷",
+    "UKR": "🇺🇦",
+}
+
 
 class ParseError(ValueError):
     pass
@@ -135,15 +152,38 @@ def format_kickoff_compact(kickoff_at: str) -> str:
     return local_datetime.strftime(KICKOFF_DISPLAY_FORMAT)
 
 
-def format_team_name(team_name: str) -> str:
+def format_team_name(
+    team_name: str,
+    display_name: str | None = None,
+    country_code: str | None = None,
+    flag_emoji: str | None = None,
+) -> str:
     normalized = team_name.strip().casefold()
-    localized_name = TEAM_NAMES_RU.get(normalized, team_name)
-    flag = TEAM_FLAGS.get(normalized) or TEAM_FLAGS.get(localized_name.casefold())
+    localized_name = display_name or TEAM_NAMES_RU.get(normalized, team_name)
+    flag = (
+        flag_emoji
+        or COUNTRY_FLAGS.get((country_code or "").upper())
+        or TEAM_FLAGS.get(normalized)
+        or TEAM_FLAGS.get(localized_name.casefold())
+    )
     return f"{flag} {localized_name}" if flag else localized_name
 
 
-def format_match_teams(home_team: str, away_team: str) -> str:
-    return f"{format_team_name(home_team)} — {format_team_name(away_team)}"
+def format_match_teams(
+    home_team: str,
+    away_team: str,
+    home_display_name: str | None = None,
+    away_display_name: str | None = None,
+    home_country_code: str | None = None,
+    away_country_code: str | None = None,
+    home_flag_emoji: str | None = None,
+    away_flag_emoji: str | None = None,
+) -> str:
+    return (
+        f"{format_team_name(home_team, home_display_name, home_country_code, home_flag_emoji)}"
+        " — "
+        f"{format_team_name(away_team, away_display_name, away_country_code, away_flag_emoji)}"
+    )
 
 
 def match_has_started(kickoff_at: str) -> bool:

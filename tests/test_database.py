@@ -112,15 +112,30 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.db.get_match(future_id))
 
     async def test_team_asset_is_saved_and_updated(self):
-        await self.db.save_team_asset("Арсенал", "https://example.com/arsenal.png")
-        await self.db.save_team_asset("Арсенал", "https://example.com/new.png")
+        await self.db.save_team_asset(
+            "Arsenal",
+            "https://example.com/arsenal.png",
+            "ENG",
+            "Арсенал",
+            "🇬🇧",
+        )
+        await self.db.save_team_asset(
+            "Arsenal",
+            "https://example.com/new.png",
+            "ENG",
+            "Арсенал",
+            "🇬🇧",
+        )
         async with self.db.connect() as connection:
             cursor = await connection.execute(
-                "SELECT logo_url FROM team_assets WHERE team_name = ?",
-                ("Арсенал",),
+                "SELECT * FROM team_assets WHERE team_name = ?",
+                ("Arsenal",),
             )
             asset = await cursor.fetchone()
         self.assertEqual(asset["logo_url"], "https://example.com/new.png")
+        self.assertEqual(asset["display_name"], "Арсенал")
+        self.assertEqual(asset["country_code"], "ENG")
+        self.assertEqual(asset["flag_emoji"], "🇬🇧")
 
     async def test_group_bind_and_participants(self):
         tournament_id = await self.db.create_tournament("UCL", "2026/27")

@@ -35,7 +35,7 @@ async def prediction_reminder_loop(
                 text = (
                     "⏰ До начала матча меньше 2 часов\n\n"
                     f"Тур {reminder['round_number']}, матч №{reminder['match_number']}\n"
-                    f"{format_match_teams(reminder['home_team'], reminder['away_team'])}\n"
+                    f"{format_match_teams(reminder['home_team'], reminder['away_team'], reminder['home_display_name'], reminder['away_display_name'], reminder['home_country_code'], reminder['away_country_code'], reminder['home_flag_emoji'], reminder['away_flag_emoji'])}\n"
                     f"Начало: {format_kickoff_compact(reminder['kickoff_at'])}\n\n"
                     "Ты ещё не сделал прогноз. Открой бота, чтобы успеть."
                 )

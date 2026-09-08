@@ -226,12 +226,60 @@ CREATE TABLE IF NOT EXISTS team_assets (
 
     team_name       TEXT NOT NULL UNIQUE,
 
+    display_name    TEXT,
+
     logo_url        TEXT,
 
     country_code    TEXT,
 
+    flag_emoji      TEXT,
+
     updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+INSERT OR IGNORE INTO team_assets (
+    team_name,
+    display_name,
+    country_code,
+    flag_emoji
+)
+VALUES
+    ('AEK Athens FC', 'АЕК Афины', 'GRE', '🇬🇷'),
+    ('Arsenal', 'Арсенал', 'ENG', '🏴'),
+    ('Aston Villa', 'Астон Вилла', 'ENG', '🏴'),
+    ('Atletico Madrid', 'Атлетико Мадрид', 'ESP', '🇪🇸'),
+    ('Barcelona', 'Барселона', 'ESP', '🇪🇸'),
+    ('Bayern München', 'Бавария', 'DEU', '🇩🇪'),
+    ('Bodo/Glimt', 'Буде-Глимт', 'NOR', '🇳🇴'),
+    ('Borussia Dortmund', 'Боруссия Дортмунд', 'DEU', '🇩🇪'),
+    ('Club Brugge KV', 'Брюгге', 'BEL', '🇧🇪'),
+    ('Como', 'Комо', 'ITA', '🇮🇹'),
+    ('Fenerbahçe', 'Фенербахче', 'TUR', '🇹🇷'),
+    ('Feyenoord', 'Фейеноорд', 'NED', '🇳🇱'),
+    ('Galatasaray', 'Галатасарай', 'TUR', '🇹🇷'),
+    ('Inter', 'Интер', 'ITA', '🇮🇹'),
+    ('Lask Linz', 'ЛАСК', 'AUT', '🇦🇹'),
+    ('RB Leipzig', 'Лейпциг', 'DEU', '🇩🇪'),
+    ('Lens', 'Ланс', 'FRA', '🇫🇷'),
+    ('Lille', 'Лилль', 'FRA', '🇫🇷'),
+    ('Liverpool', 'Ливерпуль', 'ENG', '🏴'),
+    ('Manchester City', 'Манчестер Сити', 'ENG', '🏴'),
+    ('Manchester United', 'Манчестер Юнайтед', 'ENG', '🏴'),
+    ('Napoli', 'Наполи', 'ITA', '🇮🇹'),
+    ('Paris Saint Germain', 'Пари Сен-Жермен', 'FRA', '🇫🇷'),
+    ('FC Porto', 'Порту', 'POR', '🇵🇹'),
+    ('PSV Eindhoven', 'ПСВ', 'NED', '🇳🇱'),
+    ('Real Betis', 'Бетис', 'ESP', '🇪🇸'),
+    ('Real Madrid', 'Реал Мадрид', 'ESP', '🇪🇸'),
+    ('AS Roma', 'Рома', 'ITA', '🇮🇹'),
+    ('Sabah FA', 'Сабах', 'AZE', '🇦🇿'),
+    ('Shakhtar Donetsk', 'Шахтер', 'UKR', '🇺🇦'),
+    ('Slavia Praha', 'Славия Прага', 'CZE', '🇨🇿'),
+    ('Slovan Bratislava', 'Слован Братислава', 'SVK', '🇸🇰'),
+    ('Sporting CP', 'Спортинг', 'POR', '🇵🇹'),
+    ('VfB Stuttgart', 'Штутгарт', 'DEU', '🇩🇪'),
+    ('Viking', 'Викинг', 'NOR', '🇳🇴'),
+    ('Villarreal', 'Вильяреал', 'ESP', '🇪🇸');
 
 
 -- ============================================================
