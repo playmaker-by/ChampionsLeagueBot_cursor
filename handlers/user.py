@@ -288,15 +288,11 @@ async def show_prediction_page(
             mark = "—"
 
         prediction_status = (
-            "✅ Прогноз введен"
+            "✅"
             if prediction
-            else "❌ Прогноз не введен"
+            else "❌"
         )
-        status = (
-            f"🔒 Матч закрыт · {prediction_status}"
-            if started
-            else prediction_status
-        )
+        status = f"🔒 · {prediction_status}" if started else prediction_status
         text += (
             f"{match['match_number']}. "
             f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
@@ -400,53 +396,17 @@ async def show_prediction_form(
                     f"{prediction['home_score']}:{prediction['away_score']}"
                 )
 
-    matches = await db.get_matches(match["round_id"])
-    next_match = next(
-        (
-            item for item in matches
-            if item["match_number"] > match["match_number"]
-            and not match_has_started(item["kickoff_at"])
-            and item["status"] == "scheduled"
-        ),
-        None,
-    )
     buttons = [
         back_button("↩️ К матчам", f"u:pr:r:{match['round_id']}"),
     ]
-    if next_match:
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text="➡️ Следующий матч",
-                    callback_data=f"u:pr:next:{next_match['id']}",
-                )
-            ]
-        )
 
     await callback.message.edit_text(
         "Введи счёт в формате 2:1\n\n"
         f"{format_match_teams(match['home_team'], match['away_team'], match['home_display_name'], match['away_display_name'], match['home_country_code'], match['away_country_code'], match['home_flag_emoji'], match['away_flag_emoji'])}\n"
         f"Начало: {format_kickoff_local(match['kickoff_at'])}"
-        f"{current}\n\n"
-        "После ввода счёта можно перейти к следующему матчу.",
+        f"{current}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
-
-
-@router.callback_query(F.data.startswith("u:pr:next:"))
-async def next_prediction_match_callback(
-    callback: CallbackQuery,
-    state: FSMContext,
-):
-    match_id = int(callback.data.split(":")[-1])
-    match = await db.get_match(match_id)
-    if match is None:
-        await callback.answer("Матч не найден", show_alert=True)
-        return
-    if match_has_started(match["kickoff_at"]) or match["status"] != "scheduled":
-        await callback.answer("Приём прогнозов на этот матч закрыт", show_alert=True)
-        return
-    await show_prediction_form(callback, state, match)
 
 
 @router.message(EnterPrediction.score)
