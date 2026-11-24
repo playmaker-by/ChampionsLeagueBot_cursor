@@ -407,6 +407,37 @@ CREATE TABLE IF NOT EXISTS prediction_scores (
 
 
 -- ============================================================
+-- MANUAL ROUND SCORE ADJUSTMENTS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS manual_score_adjustments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    participant_id  INTEGER NOT NULL,
+
+    round_id        INTEGER NOT NULL,
+
+    points          INTEGER NOT NULL DEFAULT 0,
+
+    updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (participant_id)
+        REFERENCES participants(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (round_id)
+        REFERENCES rounds(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+
+    UNIQUE (participant_id, round_id),
+
+    CHECK (points BETWEEN -9223372036854775807 AND 9223372036854775807)
+);
+
+
+-- ============================================================
 -- PREDICTION REMINDERS
 -- ============================================================
 

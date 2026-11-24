@@ -25,6 +25,7 @@ from states import (
     CreateTournament,
     EditMatch,
     EnterResult,
+    EnterRoundScoreAdjustment,
 )
 from utils import (
     ParseError,
@@ -260,6 +261,12 @@ async def show_tournament_menu(callback: CallbackQuery, tournament_id: int):
                 InlineKeyboardButton(
                     text="👥 Участники",
                     callback_data=f"adm:p:{tournament_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🧮 Корректировка очков",
+                    callback_data=f"adm:adj:t:{tournament_id}",
                 )
             ],
             [
@@ -1401,6 +1408,221 @@ async def participants_menu_callback(callback: CallbackQuery):
     if await reject_if_not_admin_callback(callback):
         return
     await show_participants(callback, int(callback.data.split(":")[-1]))
+
+
+# ---------------------------------------------------------------------------
+# Manual score adjustments
+# ---------------------------------------------------------------------------
+
+@router.callback_query(F.data.startswith("adm:adj:t:"))
+async def score_adjustment_tournament_callback(callback: CallbackQuery):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    tournament_id = int(callback.data.split(":")[-1])
+    rounds = await db.get_rounds(tournament_id)
+    if not rounds:
+        await send_or_edit(
+            callback,
+            "В турнире пока нет туров.",
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    back_button("↩️ К турниру", f"adm:t:{tournament_id}")
+                ]
+            ),
+        )
+        return
+
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"Тур {round_item['round_number']}",
+                callback_data=f"adm:adj:r:{round_item['id']}",
+            )
+        ]
+        for round_item in rounds
+    ]
+    buttons.append(back_button("↩️ К турниру", f"adm:t:{tournament_id}"))
+    await send_or_edit(
+        callback,
+        "🧮 Корректировка очков\n\nВыбери тур:",
+        InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:adj:r:"))
+async def score_adjustment_round_callback(callback: CallbackQuery):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    round_id = int(callback.data.split(":")[-1])
+    round_item = await db.get_round(round_id)
+    if round_item is None:
+        await callback.answer("❌ Тур не найден", show_alert=True)
+        return
+
+    participants = await db.get_participants(round_item["tournament_id"])
+    adjustments = await db.get_round_score_adjustments(round_id)
+    standings = await db.get_tournament_standings(round_item["tournament_id"])
+    totals = {row["participant_id"]: row["points"] for row in standings}
+    if not participants:
+        await send_or_edit(
+            callback,
+            "В турнире пока нет участников.",
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    back_button(
+                        "↩️ К турам",
+                        f"adm:adj:t:{round_item['tournament_id']}",
+                    )
+                ]
+            ),
+        )
+        return
+
+    buttons = []
+    for participant in participants:
+        points = adjustments.get(participant["id"], 0)
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=(
+                        f"{display_name(participant)[:18]} · "
+                        f"итого {totals.get(participant['id'], 0)} "
+                        f"({points:+})"
+                    ),
+                    callback_data=f"adm:adj:p:{round_id}:{participant['id']}",
+                )
+            ]
+        )
+    buttons.append(
+        back_button(
+            "↩️ К турам",
+            f"adm:adj:t:{round_item['tournament_id']}",
+        )
+    )
+    await send_or_edit(
+        callback,
+        f"🧮 Корректировка очков — Тур {round_item['round_number']}\n\n"
+        "Выбери участника. В скобках — текущая ручная поправка.",
+        InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:adj:p:"))
+async def score_adjustment_participant_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    _, _, _, round_id_text, participant_id_text = callback.data.split(":")
+    round_id = int(round_id_text)
+    participant_id = int(participant_id_text)
+    round_item = await db.get_round(round_id)
+    if round_item is None:
+        await callback.answer("❌ Тур не найден", show_alert=True)
+        return
+
+    participants = await db.get_participants(round_item["tournament_id"])
+    participant = next(
+        (item for item in participants if item["id"] == participant_id),
+        None,
+    )
+    if participant is None:
+        await callback.answer("❌ Участник не найден", show_alert=True)
+        return
+
+    adjustments = await db.get_round_score_adjustments(round_id)
+    current_points = adjustments.get(participant_id, 0)
+    standings = await db.get_tournament_standings(round_item["tournament_id"])
+    current_total = next(
+        (
+            row["points"]
+            for row in standings
+            if row["participant_id"] == participant_id
+        ),
+        0,
+    )
+    await state.set_state(EnterRoundScoreAdjustment.points)
+    await state.update_data(
+        round_id=round_id,
+        participant_id=participant_id,
+    )
+    await callback.answer()
+    await callback.message.answer(
+        f"🧮 {display_name(participant)} — Тур {round_item['round_number']}\n\n"
+        f"Текущий итог турнира: {current_total}\n"
+        f"Текущая поправка за этот тур: {current_points:+}\n\n"
+        "Введи итоговое количество очков участника за весь турнир. "
+        "Бот пересчитает поправку за выбранный тур так, чтобы общий итог "
+        "стал равен введённому значению."
+    )
+
+
+@router.message(EnterRoundScoreAdjustment.points)
+async def score_adjustment_points_handler(
+    message: Message,
+    state: FSMContext,
+):
+    if await reject_if_not_admin_message(message):
+        return
+
+    value = (message.text or "").strip()
+    if not value.isdecimal() or len(value) > 19:
+        await message.answer(
+            "❌ Введи целое число от 0 до 9223372036854775807."
+        )
+        return
+
+    target_points = int(value)
+    if target_points > 9223372036854775807:
+        await message.answer(
+            "❌ Максимальное значение — 9223372036854775807."
+        )
+        return
+    data = await state.get_data()
+    round_id = data["round_id"]
+    participant_id = data["participant_id"]
+    try:
+        adjustment = await db.set_tournament_target_points(
+            participant_id,
+            round_id,
+            target_points,
+        )
+    except ValueError:
+        await state.clear()
+        await message.answer("❌ Не удалось сохранить поправку: проверь участника и тур.")
+        return
+
+    await state.clear()
+    round_item = await db.get_round(round_id)
+    participant = next(
+        (
+            item
+            for item in await db.get_participants(round_item["tournament_id"])
+            if item["id"] == participant_id
+        ),
+        None,
+    ) if round_item else None
+    participant_name = display_name(participant) if participant else "Участник"
+    await message.answer(
+        f"✅ Поправка сохранена: {participant_name}, Тур "
+        f"{round_item['round_number'] if round_item else '—'}, "
+        f"корректировка {adjustment:+}.\n"
+        f"Итог турнира установлен: {target_points} очков.\n"
+        "Она учтена в таблице тура, общей таблице турнира и профиле участника.",
+        reply_markup=(
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    back_button("↩️ К корректировкам тура", f"adm:adj:r:{round_id}")
+                ]
+            )
+            if round_item
+            else None
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

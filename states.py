@@ -28,3 +28,7 @@ class EnterPrediction(StatesGroup):
 
 class EnterResult(StatesGroup):
     score = State()
+
+
+class EnterRoundScoreAdjustment(StatesGroup):
+    points = State()

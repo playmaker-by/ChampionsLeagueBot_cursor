@@ -693,11 +693,17 @@ async def send_user_profile(
             ),
             "—",
         )
+        manual_adjustment = (
+            f"Ручная корректировка: {profile['manual_points']:+}\n"
+            if profile["manual_points"]
+            else ""
+        )
         text = (
             f"👤 Профиль · {tournament['name']}\n"
             f"Сезон: {tournament['season']}\n\n"
             f"Место: {position}\n"
             f"Очки: {profile['points']}\n"
+            f"{manual_adjustment}"
             f"Точные счета: {profile['exact']}\n"
             f"Верная разница: {profile['differences']}\n"
             f"Верный исход: {profile['outcomes']}\n"

@@ -111,6 +111,96 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
         await self.db.delete_match(future_id)
         self.assertIsNone(await self.db.get_match(future_id))
 
+    async def test_manual_round_score_adjustments_are_idempotent(self):
+        tournament_id = await self.db.create_tournament("UCL", "2026/27")
+        await self.db.create_round(tournament_id, 1)
+        await self.db.create_round(tournament_id, 4)
+        rounds = await self.db.get_rounds(tournament_id)
+        round_id = rounds[1]["id"]
+
+        user = await self.db.create_or_update_user(1002, "alex", "Алекс", None)
+        await self.db.ensure_participant(tournament_id, user["id"])
+        participant = await self.db.get_participant(tournament_id, user["id"])
+
+        await self.db.set_round_score_adjustment(participant["id"], round_id, 11)
+        round_standings = await self.db.get_round_standings(round_id)
+        tournament_standings = await self.db.get_tournament_standings(
+            tournament_id
+        )
+        profile = await self.db.get_user_profile_stats(
+            tournament_id,
+            user["id"],
+        )
+        self.assertEqual(round_standings[0]["points"], 11)
+        self.assertEqual(round_standings[0]["manual_points"], 11)
+        self.assertEqual(tournament_standings[0]["points"], 11)
+        self.assertEqual(profile["points"], 11)
+        self.assertEqual(profile["manual_points"], 11)
+
+        await self.db.set_round_score_adjustment(participant["id"], round_id, 14)
+        tournament_standings = await self.db.get_tournament_standings(
+            tournament_id
+        )
+        self.assertEqual(tournament_standings[0]["points"], 14)
+
+        await self.db.set_round_score_adjustment(participant["id"], round_id, 0)
+        round_standings = await self.db.get_round_standings(round_id)
+        self.assertEqual(round_standings[0]["points"], 0)
+
+    async def test_manual_round_score_adjustment_rejects_other_tournament(self):
+        first_tournament_id = await self.db.create_tournament("UCL", "2026/27")
+        second_tournament_id = await self.db.create_tournament("UEL", "2026/27")
+        await self.db.create_round(first_tournament_id, 4)
+        round_id = (await self.db.get_rounds(first_tournament_id))[0]["id"]
+        user = await self.db.create_or_update_user(1003, "sam", "Сэм", None)
+        await self.db.ensure_participant(second_tournament_id, user["id"])
+        participant = await self.db.get_participant(second_tournament_id, user["id"])
+
+        with self.assertRaises(ValueError):
+            await self.db.set_round_score_adjustment(
+                participant["id"],
+                round_id,
+                5,
+            )
+
+    async def test_tournament_target_points_are_set_exactly(self):
+        tournament_id = await self.db.create_tournament("UCL", "2026/27")
+        await self.db.create_round(tournament_id, 1)
+        await self.db.create_round(tournament_id, 4)
+        rounds = await self.db.get_rounds(tournament_id)
+        first_round_id = rounds[0]["id"]
+        fourth_round_id = rounds[1]["id"]
+        match_id = await self.db.create_match(
+            first_round_id,
+            1,
+            "Арсенал",
+            "Наполи",
+            "2099-01-01 12:00:00",
+        )
+        user = await self.db.create_or_update_user(1004, "kim", "Ким", None)
+        await self.db.ensure_participant(tournament_id, user["id"])
+        participant = await self.db.get_participant(tournament_id, user["id"])
+        await self.db.upsert_prediction(participant["id"], match_id, 2, 1)
+        await self.db.set_match_result(match_id, 2, 1)
+
+        adjustment = await self.db.set_tournament_target_points(
+            participant["id"],
+            fourth_round_id,
+            20,
+        )
+        self.assertEqual(adjustment, 14)
+        standings = await self.db.get_tournament_standings(tournament_id)
+        self.assertEqual(standings[0]["points"], 20)
+
+        adjustment = await self.db.set_tournament_target_points(
+            participant["id"],
+            fourth_round_id,
+            3,
+        )
+        self.assertEqual(adjustment, -3)
+        standings = await self.db.get_tournament_standings(tournament_id)
+        self.assertEqual(standings[0]["points"], 3)
+
     async def test_team_asset_is_saved_and_updated(self):
         await self.db.save_team_asset(
             "Arsenal",
