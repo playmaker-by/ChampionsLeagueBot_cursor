@@ -265,7 +265,7 @@ async def show_tournament_menu(callback: CallbackQuery, tournament_id: int):
             ],
             [
                 InlineKeyboardButton(
-                    text="🧮 Корректировка очков",
+                    text="🧮 Корректировки результатов",
                     callback_data=f"adm:adj:t:{tournament_id}",
                 )
             ],
@@ -1445,7 +1445,7 @@ async def score_adjustment_tournament_callback(callback: CallbackQuery):
     buttons.append(back_button("↩️ К турниру", f"adm:t:{tournament_id}"))
     await send_or_edit(
         callback,
-        "🧮 Корректировка очков\n\nВыбери тур:",
+        "🧮 Корректировки результатов\n\nВыбери тур:",
         InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
@@ -1462,9 +1462,15 @@ async def score_adjustment_round_callback(callback: CallbackQuery):
         return
 
     participants = await db.get_participants(round_item["tournament_id"])
-    adjustments = await db.get_round_score_adjustments(round_id)
     standings = await db.get_tournament_standings(round_item["tournament_id"])
-    totals = {row["participant_id"]: row["points"] for row in standings}
+    totals = {
+        row["participant_id"]: {
+            "points": row["points"],
+            "exact": row["exact"],
+        }
+        for row in standings
+    }
+    adjustments = await db.get_round_score_adjustments(round_id)
     if not participants:
         await send_or_edit(
             callback,
@@ -1482,14 +1488,19 @@ async def score_adjustment_round_callback(callback: CallbackQuery):
 
     buttons = []
     for participant in participants:
-        points = adjustments.get(participant["id"], 0)
+        adjustment = adjustments.get(
+            participant["id"],
+            {"points": 0, "exact_scores": 0},
+        )
+        total = totals.get(participant["id"], {"points": 0, "exact": 0})
         buttons.append(
             [
                 InlineKeyboardButton(
                     text=(
-                        f"{display_name(participant)[:18]} · "
-                        f"итого {totals.get(participant['id'], 0)} "
-                        f"({points:+})"
+                        f"{display_name(participant)[:16]} · "
+                        f"{total['points']} оч. · {total['exact']} точн. "
+                        f"(поправка {adjustment['points']:+}, "
+                        f"{adjustment['exact_scores']:+} точн.)"
                     ),
                     callback_data=f"adm:adj:p:{round_id}:{participant['id']}",
                 )
@@ -1503,17 +1514,14 @@ async def score_adjustment_round_callback(callback: CallbackQuery):
     )
     await send_or_edit(
         callback,
-        f"🧮 Корректировка очков — Тур {round_item['round_number']}\n\n"
-        "Выбери участника. В скобках — текущая ручная поправка.",
+        f"🧮 Корректировки результатов — Тур {round_item['round_number']}\n\n"
+        "Выбери участника. Показаны текущие очки и число точных счетов.",
         InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
 
 @router.callback_query(F.data.startswith("adm:adj:p:"))
-async def score_adjustment_participant_callback(
-    callback: CallbackQuery,
-    state: FSMContext,
-):
+async def score_adjustment_participant_callback(callback: CallbackQuery):
     if await reject_if_not_admin_callback(callback):
         return
 
@@ -1534,30 +1542,124 @@ async def score_adjustment_participant_callback(
         await callback.answer("❌ Участник не найден", show_alert=True)
         return
 
-    adjustments = await db.get_round_score_adjustments(round_id)
-    current_points = adjustments.get(participant_id, 0)
     standings = await db.get_tournament_standings(round_item["tournament_id"])
     current_total = next(
         (
-            row["points"]
+            {"points": row["points"], "exact": row["exact"]}
+            for row in standings
+            if row["participant_id"] == participant_id
+        ),
+        {"points": 0, "exact": 0},
+    )
+    await send_or_edit(
+        callback,
+        f"🧮 {display_name(participant)} — Тур {round_item['round_number']}\n\n"
+        f"Текущий итог: {current_total['points']} очков, "
+        f"{current_total['exact']} полностью угаданных счетов.\n\n"
+        "Что нужно скорректировать?",
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🧮 Итоговые очки",
+                        callback_data=f"adm:adj:points:{round_id}:{participant_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🎯 Точные счета",
+                        callback_data=f"adm:adj:exact:{round_id}:{participant_id}",
+                    )
+                ],
+                back_button("↩️ К участникам", f"adm:adj:r:{round_id}"),
+            ]
+        ),
+    )
+
+
+async def start_score_adjustment_input(
+    callback: CallbackQuery,
+    state: FSMContext,
+    round_id: int,
+    participant_id: int,
+    *,
+    exact_scores: bool,
+):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    round_item = await db.get_round(round_id)
+    if round_item is None:
+        await callback.answer("❌ Тур не найден", show_alert=True)
+        return
+
+    participants = await db.get_participants(round_item["tournament_id"])
+    participant = next(
+        (item for item in participants if item["id"] == participant_id),
+        None,
+    )
+    if participant is None:
+        await callback.answer("❌ Участник не найден", show_alert=True)
+        return
+
+    standings = await db.get_tournament_standings(round_item["tournament_id"])
+    current_total = next(
+        (
+            row["exact"] if exact_scores else row["points"]
             for row in standings
             if row["participant_id"] == participant_id
         ),
         0,
     )
-    await state.set_state(EnterRoundScoreAdjustment.points)
+    await state.set_state(
+        EnterRoundScoreAdjustment.exact_scores
+        if exact_scores
+        else EnterRoundScoreAdjustment.points
+    )
     await state.update_data(
         round_id=round_id,
         participant_id=participant_id,
     )
     await callback.answer()
+    metric = "полностью угаданных счетов" if exact_scores else "очков"
     await callback.message.answer(
-        f"🧮 {display_name(participant)} — Тур {round_item['round_number']}\n\n"
-        f"Текущий итог турнира: {current_total}\n"
-        f"Текущая поправка за этот тур: {current_points:+}\n\n"
-        "Введи итоговое количество очков участника за весь турнир. "
-        "Бот пересчитает поправку за выбранный тур так, чтобы общий итог "
-        "стал равен введённому значению."
+        f"{display_name(participant)} — текущий итог: {current_total} {metric}.\n\n"
+        f"Введи точное итоговое количество {metric} за турнир. "
+        "Бот пересчитает поправку за выбранный тур."
+    )
+
+
+@router.callback_query(F.data.startswith("adm:adj:points:"))
+async def start_points_adjustment_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    if await reject_if_not_admin_callback(callback):
+        return
+    _, _, _, round_id, participant_id = callback.data.split(":")
+    await start_score_adjustment_input(
+        callback,
+        state,
+        int(round_id),
+        int(participant_id),
+        exact_scores=False,
+    )
+
+
+@router.callback_query(F.data.startswith("adm:adj:exact:"))
+async def start_exact_adjustment_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+):
+    if await reject_if_not_admin_callback(callback):
+        return
+    _, _, _, round_id, participant_id = callback.data.split(":")
+    await start_score_adjustment_input(
+        callback,
+        state,
+        int(round_id),
+        int(participant_id),
+        exact_scores=True,
     )
 
 
@@ -1612,7 +1714,64 @@ async def score_adjustment_points_handler(
         f"{round_item['round_number'] if round_item else '—'}, "
         f"корректировка {adjustment:+}.\n"
         f"Итог турнира установлен: {target_points} очков.\n"
-        "Она учтена в таблице тура, общей таблице турнира и профиле участника.",
+        "Поправка учтена в таблицах тура и турнира.",
+        reply_markup=(
+            InlineKeyboardMarkup(
+                inline_keyboard=[
+                    back_button("↩️ К корректировкам тура", f"adm:adj:r:{round_id}")
+                ]
+            )
+            if round_item
+            else None
+        ),
+    )
+
+
+@router.message(EnterRoundScoreAdjustment.exact_scores)
+async def score_adjustment_exact_scores_handler(
+    message: Message,
+    state: FSMContext,
+):
+    if await reject_if_not_admin_message(message):
+        return
+
+    value = (message.text or "").strip()
+    if not value.isdecimal() or len(value) > 19:
+        await message.answer(
+            "❌ Введи целое число от 0 до 9223372036854775807."
+        )
+        return
+
+    target_exact_scores = int(value)
+    if target_exact_scores > 9223372036854775807:
+        await message.answer(
+            "❌ Максимальное значение — 9223372036854775807."
+        )
+        return
+
+    data = await state.get_data()
+    round_id = data["round_id"]
+    participant_id = data["participant_id"]
+    try:
+        adjustment = await db.set_tournament_target_exact_scores(
+            participant_id,
+            round_id,
+            target_exact_scores,
+        )
+    except ValueError:
+        await state.clear()
+        await message.answer(
+            "❌ Не удалось сохранить поправку: проверь участника и тур."
+        )
+        return
+
+    await state.clear()
+    round_item = await db.get_round(round_id)
+    await message.answer(
+        f"✅ Поправка точных счетов за Тур "
+        f"{round_item['round_number'] if round_item else '—'}: "
+        f"{adjustment:+}.\n"
+        f"Итог за турнир установлен: {target_exact_scores} точных счетов.",
         reply_markup=(
             InlineKeyboardMarkup(
                 inline_keyboard=[

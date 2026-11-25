@@ -46,6 +46,15 @@ class Database:
                 await db.execute(
                     "ALTER TABLE team_assets ADD COLUMN flag_emoji TEXT"
                 )
+            cursor = await db.execute(
+                "PRAGMA table_info(manual_score_adjustments)"
+            )
+            columns = {row[1] for row in await cursor.fetchall()}
+            if "exact_scores" not in columns:
+                await db.execute(
+                    """ALTER TABLE manual_score_adjustments
+                       ADD COLUMN exact_scores INTEGER NOT NULL DEFAULT 0"""
+                )
 
     async def get_user(self, telegram_id: int):
         async with self.connect() as db:
@@ -876,14 +885,17 @@ class Database:
         async with self.connect() as db:
             cursor = await db.execute(
                 """
-                SELECT participant_id, points
+                SELECT participant_id, points, exact_scores
                 FROM manual_score_adjustments
                 WHERE round_id = ?
                 """,
                 (round_id,),
             )
             return {
-                row["participant_id"]: row["points"]
+                row["participant_id"]: {
+                    "points": row["points"],
+                    "exact_scores": row["exact_scores"],
+                }
                 for row in await cursor.fetchall()
             }
 
@@ -915,16 +927,6 @@ class Database:
             ):
                 raise ValueError("Participant and round must belong to one tournament")
 
-            if points == 0:
-                await db.execute(
-                    """
-                    DELETE FROM manual_score_adjustments
-                    WHERE participant_id = ? AND round_id = ?
-                    """,
-                    (participant_id, round_id),
-                )
-                return
-
             await db.execute(
                 """
                 INSERT INTO manual_score_adjustments (
@@ -937,6 +939,14 @@ class Database:
                     updated_at = excluded.updated_at
                 """,
                 (participant_id, round_id, points, utc_now_str()),
+            )
+            await db.execute(
+                """
+                DELETE FROM manual_score_adjustments
+                WHERE participant_id = ? AND round_id = ?
+                  AND points = 0 AND exact_scores = 0
+                """,
+                (participant_id, round_id),
             )
 
     async def set_tournament_target_points(
@@ -997,28 +1007,124 @@ class Database:
             if not -9223372036854775807 <= adjustment <= 9223372036854775807:
                 raise ValueError("Calculated adjustment is outside SQLite integer range")
 
-            if adjustment == 0:
-                await db.execute(
-                    """
-                    DELETE FROM manual_score_adjustments
-                    WHERE participant_id = ? AND round_id = ?
-                    """,
-                    (participant_id, round_id),
+            await db.execute(
+                """
+                INSERT INTO manual_score_adjustments (
+                    participant_id, round_id, points, updated_at
                 )
-            else:
-                await db.execute(
-                    """
-                    INSERT INTO manual_score_adjustments (
-                        participant_id, round_id, points, updated_at
-                    )
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(participant_id, round_id)
-                    DO UPDATE SET
-                        points = excluded.points,
-                        updated_at = excluded.updated_at
-                    """,
-                    (participant_id, round_id, adjustment, utc_now_str()),
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(participant_id, round_id)
+                DO UPDATE SET
+                    points = excluded.points,
+                    updated_at = excluded.updated_at
+                """,
+                (participant_id, round_id, adjustment, utc_now_str()),
+            )
+            await db.execute(
+                """
+                DELETE FROM manual_score_adjustments
+                WHERE participant_id = ? AND round_id = ?
+                  AND points = 0 AND exact_scores = 0
+                """,
+                (participant_id, round_id),
+            )
+
+            return adjustment
+
+    async def set_tournament_target_exact_scores(
+        self,
+        participant_id: int,
+        round_id: int,
+        target_exact_scores: int,
+    ) -> int:
+        if not 0 <= target_exact_scores <= 9223372036854775807:
+            raise ValueError("Target exact-score count is outside SQLite integer range")
+
+        async with self.connect() as db:
+            cursor = await db.execute(
+                """
+                SELECT p.tournament_id AS participant_tournament_id,
+                       r.tournament_id AS round_tournament_id
+                FROM participants p
+                JOIN rounds r ON r.id = ?
+                WHERE p.id = ?
+                """,
+                (round_id, participant_id),
+            )
+            row = await cursor.fetchone()
+            if (
+                row is None
+                or row["participant_tournament_id"]
+                != row["round_tournament_id"]
+            ):
+                raise ValueError("Participant and round must belong to one tournament")
+
+            tournament_id = row["round_tournament_id"]
+            cursor = await db.execute(
+                """
+                SELECT COUNT(m.id) AS matches_count
+                FROM matches m
+                JOIN rounds r ON r.id = m.round_id
+                WHERE r.tournament_id = ?
+                """,
+                (tournament_id,),
+            )
+            matches_count = (await cursor.fetchone())["matches_count"]
+            if target_exact_scores > matches_count:
+                raise ValueError("Exact-score count cannot exceed tournament matches")
+
+            cursor = await db.execute(
+                """
+                SELECT COALESCE(SUM(ps.exact_score), 0) AS exact_scores
+                FROM predictions pr
+                JOIN matches m ON m.id = pr.match_id
+                JOIN rounds r ON r.id = m.round_id
+                LEFT JOIN prediction_scores ps ON ps.prediction_id = pr.id
+                WHERE pr.participant_id = ? AND r.tournament_id = ?
+                """,
+                (participant_id, tournament_id),
+            )
+            scored_exact_scores = (await cursor.fetchone())["exact_scores"]
+
+            cursor = await db.execute(
+                """
+                SELECT COALESCE(SUM(msa.exact_scores), 0) AS exact_scores
+                FROM manual_score_adjustments msa
+                JOIN rounds r ON r.id = msa.round_id
+                WHERE msa.participant_id = ?
+                  AND r.tournament_id = ?
+                  AND msa.round_id != ?
+                """,
+                (participant_id, tournament_id, round_id),
+            )
+            other_adjustments = (await cursor.fetchone())["exact_scores"]
+            adjustment = (
+                target_exact_scores - scored_exact_scores - other_adjustments
+            )
+            if not -9223372036854775807 <= adjustment <= 9223372036854775807:
+                raise ValueError("Calculated adjustment is outside SQLite integer range")
+
+            await db.execute(
+                """
+                INSERT INTO manual_score_adjustments (
+                    participant_id, round_id, exact_scores, updated_at
                 )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(participant_id, round_id)
+                DO UPDATE SET
+                    exact_scores = excluded.exact_scores,
+                    updated_at = excluded.updated_at
+                """,
+                (participant_id, round_id, adjustment, utc_now_str()),
+            )
+            await db.execute(
+                """
+                DELETE FROM manual_score_adjustments
+                WHERE participant_id = ? AND round_id = ?
+                  AND points = 0 AND exact_scores = 0
+                """,
+                (participant_id, round_id),
+            )
 
             return adjustment
 
@@ -1062,8 +1168,8 @@ class Database:
                     u.last_name,
                     COALESCE(SUM(s.points), 0) + COALESCE(MAX(a.points), 0)
                         AS points,
-                    COALESCE(MAX(a.points), 0) AS manual_points,
-                    COALESCE(SUM(s.exact_score), 0) AS exact
+                    COALESCE(SUM(s.exact_score), 0)
+                        + COALESCE(MAX(a.exact_scores), 0) AS exact
                 FROM participants p
                 JOIN users u ON u.id = p.user_id
                 LEFT JOIN (
@@ -1096,14 +1202,16 @@ class Database:
                     u.last_name,
                     COALESCE(SUM(ps.points), 0) + COALESCE(MAX(a.points), 0)
                         AS points,
-                    COALESCE(MAX(a.points), 0) AS manual_points,
-                    COALESCE(SUM(ps.exact_score), 0) AS exact
+                    COALESCE(SUM(ps.exact_score), 0)
+                        + COALESCE(MAX(a.exact_scores), 0) AS exact
                 FROM participants p
                 JOIN users u ON u.id = p.user_id
                 LEFT JOIN predictions pr ON pr.participant_id = p.id
                 LEFT JOIN prediction_scores ps ON ps.prediction_id = pr.id
                 LEFT JOIN (
-                    SELECT msa.participant_id, SUM(msa.points) AS points
+                          SELECT msa.participant_id,
+                              SUM(msa.points) AS points,
+                              SUM(msa.exact_scores) AS exact_scores
                     FROM manual_score_adjustments msa
                     JOIN rounds r ON r.id = msa.round_id
                     WHERE r.tournament_id = ?
@@ -1126,8 +1234,8 @@ class Database:
                     p.is_active,
                     COALESCE(SUM(ps.points), 0) + COALESCE(MAX(a.points), 0)
                         AS points,
-                    COALESCE(MAX(a.points), 0) AS manual_points,
-                    COALESCE(SUM(ps.exact_score), 0) AS exact,
+                    COALESCE(SUM(ps.exact_score), 0)
+                        + COALESCE(MAX(a.exact_scores), 0) AS exact,
                     COALESCE(SUM(ps.correct_difference), 0) AS differences,
                     COALESCE(SUM(ps.correct_outcome), 0) AS outcomes,
                     COUNT(DISTINCT pr.id) AS predictions_count,
@@ -1141,7 +1249,9 @@ class Database:
                 LEFT JOIN predictions pr ON pr.participant_id = p.id
                 LEFT JOIN prediction_scores ps ON ps.prediction_id = pr.id
                 LEFT JOIN (
-                    SELECT msa.participant_id, SUM(msa.points) AS points
+                          SELECT msa.participant_id,
+                              SUM(msa.points) AS points,
+                              SUM(msa.exact_scores) AS exact_scores
                     FROM manual_score_adjustments msa
                     JOIN rounds r ON r.id = msa.round_id
                     WHERE r.tournament_id = ?

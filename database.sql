@@ -419,6 +419,8 @@ CREATE TABLE IF NOT EXISTS manual_score_adjustments (
 
     points          INTEGER NOT NULL DEFAULT 0,
 
+    exact_scores    INTEGER NOT NULL DEFAULT 0,
+
     updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (participant_id)
@@ -433,7 +435,9 @@ CREATE TABLE IF NOT EXISTS manual_score_adjustments (
 
     UNIQUE (participant_id, round_id),
 
-    CHECK (points BETWEEN -9223372036854775807 AND 9223372036854775807)
+    CHECK (points BETWEEN -9223372036854775807 AND 9223372036854775807),
+
+    CHECK (exact_scores BETWEEN -9223372036854775807 AND 9223372036854775807)
 );
 
 

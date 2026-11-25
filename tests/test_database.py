@@ -132,10 +132,10 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
             user["id"],
         )
         self.assertEqual(round_standings[0]["points"], 11)
-        self.assertEqual(round_standings[0]["manual_points"], 11)
+        self.assertEqual(round_standings[0]["exact"], 0)
         self.assertEqual(tournament_standings[0]["points"], 11)
         self.assertEqual(profile["points"], 11)
-        self.assertEqual(profile["manual_points"], 11)
+        self.assertEqual(profile["exact"], 0)
 
         await self.db.set_round_score_adjustment(participant["id"], round_id, 14)
         tournament_standings = await self.db.get_tournament_standings(
@@ -200,6 +200,93 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adjustment, -3)
         standings = await self.db.get_tournament_standings(tournament_id)
         self.assertEqual(standings[0]["points"], 3)
+
+    async def test_tournament_target_exact_scores_are_set_exactly(self):
+        tournament_id = await self.db.create_tournament("UCL", "2026/27")
+        await self.db.create_round(tournament_id, 1)
+        await self.db.create_round(tournament_id, 4)
+        rounds = await self.db.get_rounds(tournament_id)
+        first_round_id = rounds[0]["id"]
+        fourth_round_id = rounds[1]["id"]
+        match_id = await self.db.create_match(
+            first_round_id,
+            1,
+            "Арсенал",
+            "Наполи",
+            "2099-01-01 12:00:00",
+        )
+        await self.db.create_match(
+            fourth_round_id,
+            2,
+            "Милан",
+            "Порту",
+            "2099-01-02 12:00:00",
+        )
+        user = await self.db.create_or_update_user(1005, "lee", "Ли", None)
+        await self.db.ensure_participant(tournament_id, user["id"])
+        participant = await self.db.get_participant(tournament_id, user["id"])
+        await self.db.upsert_prediction(participant["id"], match_id, 2, 1)
+        await self.db.set_match_result(match_id, 2, 1)
+
+        adjustment = await self.db.set_tournament_target_exact_scores(
+            participant["id"],
+            fourth_round_id,
+            2,
+        )
+        self.assertEqual(adjustment, 1)
+        standings = await self.db.get_tournament_standings(tournament_id)
+        self.assertEqual(standings[0]["exact"], 2)
+
+        await self.db.set_tournament_target_points(
+            participant["id"],
+            fourth_round_id,
+            20,
+        )
+        await self.db.set_tournament_target_exact_scores(
+            participant["id"],
+            fourth_round_id,
+            0,
+        )
+        standings = await self.db.get_tournament_standings(tournament_id)
+        self.assertEqual(standings[0]["points"], 20)
+        self.assertEqual(standings[0]["exact"], 0)
+
+        profile = await self.db.get_user_profile_stats(
+            tournament_id,
+            user["id"],
+        )
+        self.assertEqual(profile["exact"], 0)
+
+    async def test_manual_score_adjustment_migrates_exact_scores_column(self):
+        handle, legacy_path = tempfile.mkstemp(suffix=".db")
+        os.close(handle)
+        legacy_db = Database(legacy_path)
+        try:
+            async with legacy_db.connect() as connection:
+                await connection.execute(
+                    """
+                    CREATE TABLE manual_score_adjustments (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        participant_id INTEGER NOT NULL,
+                        round_id INTEGER NOT NULL,
+                        points INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (participant_id, round_id)
+                    )
+                    """
+                )
+
+            await legacy_db.create_tables()
+
+            async with legacy_db.connect() as connection:
+                cursor = await connection.execute(
+                    "PRAGMA table_info(manual_score_adjustments)"
+                )
+                columns = {row["name"] for row in await cursor.fetchall()}
+            self.assertIn("exact_scores", columns)
+        finally:
+            if os.path.exists(legacy_path):
+                os.remove(legacy_path)
 
     async def test_team_asset_is_saved_and_updated(self):
         await self.db.save_team_asset(

@@ -32,3 +32,4 @@ class EnterResult(StatesGroup):
 
 class EnterRoundScoreAdjustment(StatesGroup):
     points = State()
+    exact_scores = State()

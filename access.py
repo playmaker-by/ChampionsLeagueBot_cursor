@@ -29,14 +29,9 @@ def format_standings(title: str, rows) -> str:
 
     for index, row in enumerate(rows, start=1):
         inactive = "" if row["is_active"] else " (неактивен)"
-        manual_points = (
-            f", в т.ч. {row['manual_points']:+} вручную"
-            if "manual_points" in row.keys() and row["manual_points"]
-            else ""
-        )
         lines.append(
             f"{index}. {display_name(row)} — {row['points']} "
-            f"({row['exact']} точн.{manual_points}){inactive}"
+            f"({row['exact']} точн.){inactive}"
         )
 
     return "\n".join(lines)
