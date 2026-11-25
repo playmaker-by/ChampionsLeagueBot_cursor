@@ -1384,6 +1384,16 @@ async def show_participants(callback: CallbackQuery, tournament_id: int):
                 )
             ]
         )
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🗑 Удалить: {display_name(participant)[:20]}",
+                    callback_data=(
+                        f"adm:p:delete:{tournament_id}:{participant['id']}"
+                    ),
+                )
+            ]
+        )
 
     buttons.append(back_button("↩️ Назад", f"adm:t:{tournament_id}"))
     await send_or_edit(
@@ -1401,6 +1411,68 @@ async def set_participant_callback(callback: CallbackQuery):
     await db.set_participant_active(int(participant_id), int(is_active))
     await callback.answer("Сохранено")
     await show_participants(callback, int(tournament_id))
+
+
+@router.callback_query(F.data.startswith("adm:p:delete:"))
+async def confirm_delete_participant_callback(callback: CallbackQuery):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    _, _, _, tournament_id_text, participant_id_text = callback.data.split(":")
+    tournament_id = int(tournament_id_text)
+    participant_id = int(participant_id_text)
+    participants = await db.get_participants(tournament_id)
+    participant = next(
+        (item for item in participants if item["id"] == participant_id),
+        None,
+    )
+    if participant is None:
+        await callback.answer("❌ Участник не найден", show_alert=True)
+        return
+
+    await send_or_edit(
+        callback,
+        "⚠️ Удалить участника из этого турнира?\n\n"
+        f"{display_name(participant)}\n\n"
+        "Будут безвозвратно удалены его прогнозы, начисления и история "
+        "в этом турнире. В других турнирах участник останется.",
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🗑 Да, удалить участника",
+                        callback_data=(
+                            f"adm:p:delete_confirm:{tournament_id}:{participant_id}"
+                        ),
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="↩️ Отмена",
+                        callback_data=f"adm:p:{tournament_id}",
+                    )
+                ],
+            ]
+        ),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:p:delete_confirm:"))
+async def delete_participant_callback(callback: CallbackQuery):
+    if await reject_if_not_admin_callback(callback):
+        return
+
+    _, _, _, tournament_id_text, participant_id_text = callback.data.split(":")
+    tournament_id = int(tournament_id_text)
+    participant_id = int(participant_id_text)
+    deleted = await db.delete_participant(participant_id, tournament_id)
+    if not deleted:
+        await callback.answer("Участник уже удалён или не найден", show_alert=True)
+        await show_participants(callback, tournament_id)
+        return
+
+    await callback.answer("Участник и его история удалены")
+    await show_participants(callback, tournament_id)
 
 
 @router.callback_query(F.data.regexp(r"^adm:p:\d+$"))

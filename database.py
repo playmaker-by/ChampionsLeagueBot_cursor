@@ -491,6 +491,46 @@ class Database:
                 (is_active, participant_id),
             )
 
+    async def delete_participant(
+        self,
+        participant_id: int,
+        tournament_id: int,
+    ) -> bool:
+        async with self.connect() as db:
+            cursor = await db.execute(
+                """
+                SELECT user_id
+                FROM participants
+                WHERE id = ? AND tournament_id = ?
+                """,
+                (participant_id, tournament_id),
+            )
+            participant = await cursor.fetchone()
+            if participant is None:
+                return False
+
+            await db.execute(
+                """
+                DELETE FROM prediction_reminders
+                WHERE user_id = ?
+                  AND match_id IN (
+                      SELECT m.id
+                      FROM matches m
+                      JOIN rounds r ON r.id = m.round_id
+                      WHERE r.tournament_id = ?
+                  )
+                """,
+                (participant["user_id"], tournament_id),
+            )
+            cursor = await db.execute(
+                """
+                DELETE FROM participants
+                WHERE id = ? AND tournament_id = ?
+                """,
+                (participant_id, tournament_id),
+            )
+            return cursor.rowcount > 0
+
     async def get_rounds_with_open_matches(self, tournament_id: int):
         now = utc_now_str()
         async with self.connect() as db:

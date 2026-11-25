@@ -331,6 +331,80 @@ class DatabaseFlowTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(utc_now_str())
 
+    async def test_delete_participant_cascades_history_but_keeps_user(self):
+        tournament_id = await self.db.create_tournament("UCL", "2026/27")
+        another_tournament_id = await self.db.create_tournament("UEL", "2026/27")
+        await self.db.create_round(tournament_id, 1)
+        round_id = (await self.db.get_rounds(tournament_id))[0]["id"]
+        match_id = await self.db.create_match(
+            round_id,
+            1,
+            "Арсенал",
+            "Наполи",
+            "2099-01-01 12:00:00",
+        )
+        user = await self.db.create_or_update_user(1006, "pat", "Пэт", None)
+        await self.db.ensure_participant(tournament_id, user["id"])
+        await self.db.ensure_participant(another_tournament_id, user["id"])
+        participant = await self.db.get_participant(tournament_id, user["id"])
+        await self.db.upsert_prediction(participant["id"], match_id, 2, 1)
+        await self.db.set_match_result(match_id, 2, 1)
+        await self.db.set_round_score_adjustment(
+            participant["id"],
+            round_id,
+            5,
+        )
+        await self.db.mark_prediction_reminder_sent(user["id"], match_id)
+
+        self.assertFalse(
+            await self.db.delete_participant(
+                participant["id"],
+                another_tournament_id,
+            )
+        )
+        deleted = await self.db.delete_participant(
+            participant["id"],
+            tournament_id,
+        )
+        self.assertTrue(deleted)
+        self.assertFalse(
+            await self.db.delete_participant(participant["id"], tournament_id)
+        )
+
+        async with self.db.connect() as connection:
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS count FROM predictions WHERE participant_id = ?",
+                (participant["id"],),
+            )
+            self.assertEqual((await cursor.fetchone())["count"], 0)
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS count FROM prediction_scores"
+            )
+            self.assertEqual((await cursor.fetchone())["count"], 0)
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS count FROM prediction_reminders"
+            )
+            self.assertEqual((await cursor.fetchone())["count"], 0)
+            cursor = await connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM manual_score_adjustments
+                WHERE participant_id = ?
+                """,
+                (participant["id"],),
+            )
+            self.assertEqual((await cursor.fetchone())["count"], 0)
+            cursor = await connection.execute(
+                "SELECT id FROM users WHERE id = ?",
+                (user["id"],),
+            )
+            self.assertIsNotNone(await cursor.fetchone())
+
+        self.assertIsNone(await self.db.get_participant(tournament_id, user["id"]))
+        self.assertIsNotNone(
+            await self.db.get_participant(another_tournament_id, user["id"])
+        )
+
     async def test_locked_prediction_is_not_overwritten(self):
         tournament_id = await self.db.create_tournament("UCL", "2026/27")
         await self.db.create_round(tournament_id, 1)
